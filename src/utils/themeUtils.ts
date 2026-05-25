@@ -1,0 +1,111 @@
+// src/utils/themeUtils.ts
+
+// In utils/themeUtils.ts - Add or update this
+export const HIGHLIGHT_COLORS: Record<string, { bg: string; border: string; text: string }> = {
+  yellow: { bg: '#FEF08A', border: '#EAB308', text: '#854D0E' },
+  green: { bg: '#BBF7D0', border: '#22C55E', text: '#166534' },
+  blue: { bg: '#BFDBFE', border: '#3B82F6', text: '#1E40AF' },
+  pink: { bg: '#FBCFE8', border: '#EC4899', text: '#9D174D' },
+  purple: { bg: '#E9D5FF', border: '#A855F7', text: '#6B21A8' },
+  orange: { bg: '#FED7AA', border: '#F97316', text: '#9A3412' },
+};
+
+export const getTheme = (themeName: string) => {
+  const themes = {
+    classic: {
+      bg: '#F5F0E8',
+      text: '#3B2F2F',
+      textMuted: '#8B7355',
+      textFaint: '#B8A88A',
+      accent: '#8B6914',
+      border: '#D4C4A8',
+      card: '#FFF8F0',
+      surface: '#EDE5D8',
+      navBg: '#F5F0E8',
+      verseNumber: '#8B6914',
+      scrollbar: '#D4C4A8',
+      shadow: 'rgba(0,0,0,0.1)',
+    },
+    sepia: {
+      bg: '#F4ECD8',
+      text: '#5B4B3A',
+      textMuted: '#8B7355',
+      textFaint: '#B8A88A',
+      accent: '#A0522D',
+      border: '#D4C4A8',
+      card: '#FEF8E8',
+      surface: '#EDE5D8',
+      navBg: '#F4ECD8',
+      verseNumber: '#A0522D',
+      scrollbar: '#D4C4A8',
+      shadow: 'rgba(0,0,0,0.1)',
+    },
+    dark: {
+      bg: '#1A1A2E',
+      text: '#EEEEEE',
+      textMuted: '#AAAAAA',
+      textFaint: '#666666',
+      accent: '#D4A574',
+      border: '#2A2A3E',
+      card: '#252540',
+      surface: '#1E1E35',
+      navBg: '#12121A',
+      verseNumber: '#D4A574',
+      scrollbar: '#3A3A4E',
+      shadow: 'rgba(0,0,0,0.3)',
+    },
+    'pure-black': {
+      bg: '#000000',
+      text: '#FFFFFF',
+      textMuted: '#AAAAAA',
+      textFaint: '#555555',
+      accent: '#D4A574',
+      border: '#1A1A1A',
+      card: '#0A0A0A',
+      surface: '#0D0D0D',
+      navBg: '#000000',
+      verseNumber: '#D4A574',
+      scrollbar: '#1A1A1A',
+      shadow: 'rgba(0,0,0,0.5)',
+    },
+    nature: {
+      bg: '#1a3a1a',
+      text: '#d4e6d4',
+      textMuted: '#8ba88b',
+      textFaint: '#4a6a4a',
+      accent: '#6b8e23',
+      border: '#2a4a2a',
+      card: '#204020',
+      surface: '#1a351a',
+      navBg: '#0f2a0f',
+      verseNumber: '#7cb342',
+      scrollbar: '#2a4a2a',
+      shadow: 'rgba(0,0,0,0.3)',
+    },
+    ocean: {
+      bg: '#0a2a3a',
+      text: '#c8e8f8',
+      textMuted: '#78a8b8',
+      textFaint: '#386878',
+      accent: '#4a9eff',
+      border: '#1a3a4a',
+      card: '#0f303f',
+      surface: '#0a2532',
+      navBg: '#061820',
+      verseNumber: '#4a9eff',
+      scrollbar: '#1a4a5a',
+      shadow: 'rgba(0,0,0,0.3)',
+    },
+  };
+
+  return themes[themeName as keyof typeof themes] || themes.classic;
+};
+
+export const THEMES = [
+  { id: 'classic', name: 'Classic' },
+  { id: 'sepia', name: 'Sepia' },
+  { id: 'dark', name: 'Dark' },
+  { id: 'pure-black', name: 'Pure Black' },
+  { id: 'nature', name: 'Nature' },
+  { id: 'ocean', name: 'Ocean' },
+];
