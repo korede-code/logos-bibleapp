@@ -18,12 +18,6 @@
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
-<<<<<<< Updated upstream
-  },
-  "engines": {
-  "node": "20.x"
-}
-=======
   }
->>>>>>> Stashed changes
+
 }
