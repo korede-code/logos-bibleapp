@@ -1,11 +1,10 @@
 {
   "name": "react-vite-tailwind",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
-<<<<<<< Updated upstream
     "build": "vite build, npm run build",
     "preview": "vite preview"
   },
@@ -18,27 +17,6 @@
     "react-dom": "^19.0.0",
     "recharts": "^2.9.3",
     "zustand": "^4.4.7"
-=======
-    "build": "npm install --legacy-peer-deps && npm run build",
-    "preview": "vite preview",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "start": "concurrently \"npm run dev\" \"npm run server\""
-  },
-  "dependencies": {
-    "@firebase/app": "^0.14.12",
-    "@firebase/auth": "^1.13.1",
-    "clsx": "2.1.1",
-    "date-fns": "^4.1.0",
-    "express": "^5.2.1",
-    "firebase": "^12.13.0",
-    "lucide-react": "^1.16.0",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
-    "react-is": "^19.2.6",
-    "recharts": "^3.8.1",
-    "tailwind-merge": "3.4.0",
-    "zustand": "^5.0.13"
->>>>>>> Stashed changes
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
