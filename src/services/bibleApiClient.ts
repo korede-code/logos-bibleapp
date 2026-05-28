@@ -18,7 +18,7 @@ declare global {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
