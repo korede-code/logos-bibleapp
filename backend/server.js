@@ -10,24 +10,29 @@ const PORT = process.env.PORT || 3000;
 
 // Define allowed origins
 const allowedOrigins = [
-  'http://localhost:5173',               // Local development
-  'https://logos-bibleapp.vercel.app',   // Your production frontend
-  'https://logos-daily-backend.onrender.com'     // The domain from your error
+  'http://localhost:5173',                    // Local development
+  'http://localhost:3000',                    // Local backend
+  'https://logos-bibleapp.vercel.app',        // Your Vercel domain
+  'https://logos-bibleapp-*.vercel.app',      // Vercel preview deployments
 ];
 
 // Apply the CORS middleware with your configuration
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps, curl, etc.)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) === -1) {
-      const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
-      return callback(new Error(msg), false);
+    
+    if (allowedOrigins.indexOf(origin) !== -1 || 
+        origin.endsWith('.vercel.app')) {
+      callback(null, true);
+    } else {
+      console.log('❌ Blocked by CORS:', origin);
+      callback(new Error('Not allowed by CORS'));
     }
-    return callback(null, true);
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 app.use(express.json());
