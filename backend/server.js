@@ -1,6 +1,5 @@
 const express = require('express');
 const cors = require('cors');
-const axios = require('axios');
 const dotenv = require('dotenv');
 
 dotenv.config();
@@ -8,19 +7,17 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const cors = require('cors');
 
 // Define allowed origins
 const allowedOrigins = [
   'http://localhost:5173',               // Local development
   'https://logos-bibleapp.vercel.app',   // Your production frontend
-  'https://logs-bibleapp.vercel.app'     // The domain from your error
+  'https://logos-daily-backend.onrender.com'     // The domain from your error
 ];
 
-// Middleware
+// Apply the CORS middleware with your configuration
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
       const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
@@ -32,6 +29,7 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
+
 app.use(express.json());
 
 console.log('🚀 Starting Logos Daily API Server...');
