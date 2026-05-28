@@ -9,31 +9,19 @@ const PORT = process.env.PORT || 3000;
 
 
 // Define allowed origins
-const allowedOrigins = [
-  'http://localhost:5173',                    // Local development
-  'http://localhost:3000',                    // Local backend
-  'https://logos-bibleapp.vercel.app',        // Your Vercel domain
-  'https://logos-bibleapp-*.vercel.app',      // Vercel preview deployments
-];
+
+// Allow all origins for testing (we'll restrict later)
+app.use(cors({
+    origin: '*',  // Allow all origins temporarily
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
+
+// Handle preflight requests explicitly
+app.options('*', cors());
 
 // Apply the CORS middleware with your configuration
-app.use(cors({
-  origin: function (origin, callback) {
-    // Allow requests with no origin (like mobile apps, curl, etc.)
-    if (!origin) return callback(null, true);
-    
-    if (allowedOrigins.indexOf(origin) !== -1 || 
-        origin.endsWith('.vercel.app')) {
-      callback(null, true);
-    } else {
-      console.log('❌ Blocked by CORS:', origin);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+
 
 app.use(express.json());
 
