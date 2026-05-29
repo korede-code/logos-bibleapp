@@ -1,14 +1,13 @@
 const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const axios = require('axios');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-
-// Define allowed origins
 
 // Allow all origins for testing (we'll restrict later)
 app.use(cors({
@@ -178,40 +177,48 @@ app.get('/api/bible/votd', (req, res) => {
   });
 });
 
-// ============ GET CHAPTER ============
+// ===== GET CHAPTER - WITH REAL BIBLE CONTENT ========
 app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   const { translation, book, chapter } = req.params;
-  console.log(`📖 Chapter: ${translation}/${book}/${chapter}`);
+  const bookName = book.charAt(0).toUpperCase() + book.slice(1).toLowerCase();
+  const chapterNum = parseInt(chapter);
+  
+  console.log(`📖 Chapter requested: ${translation}/${bookName}/${chapterNum}`);
   
   try {
-    const url = `https://bible-api.com/${encodeURIComponent(book)}%20${chapter}?translation=${translation.toLowerCase()}`;
+    // Use the free Bible API
+    const url = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=${translation.toLowerCase()}`;
+    console.log(`  Fetching: ${url}`);
+    
     const response = await axios.get(url, { timeout: 10000 });
     
     if (response.data && response.data.verses) {
       const verses = response.data.verses.map(v => ({
-        book: book,
-        chapter: parseInt(chapter),
+        book: bookName,
+        chapter: chapterNum,
         verse: v.verse,
         text: v.text,
         translation: translation.toUpperCase()
       }));
-      res.json({ success: true, data: verses });
-    } else {
-      throw new Error('No verses');
+      console.log(`  ✅ Found ${verses.length} verses`);
+      return res.json({ success: true, data: verses });
     }
+    throw new Error('No verses returned');
   } catch (error) {
-    console.log('Using mock data for chapter');
-    const mockVerses = [];
-    for (let i = 1; i <= 30; i++) {
-      mockVerses.push({
-        book: book,
-        chapter: parseInt(chapter),
+    console.log(`  ❌ API error: ${error.message}`);
+    
+    // Return a helpful message instead of placeholder
+    const verses = [];
+    for (let i = 1; i <= 20; i++) {
+      verses.push({
+        book: bookName,
+        chapter: chapterNum,
         verse: i,
-        text: `${book} ${chapter}:${i}`,
+        text: `Unable to load ${bookName} ${chapterNum}:${i}. Please check your internet connection.`,
         translation: translation.toUpperCase()
       });
     }
-    res.json({ success: true, data: mockVerses });
+    res.json({ success: true, data: verses });
   }
 });
 
