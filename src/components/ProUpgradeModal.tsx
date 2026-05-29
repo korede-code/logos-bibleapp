@@ -2,8 +2,7 @@
 import React, { useState } from 'react';
 import { X, Crown, Check, Star, Zap, Shield, CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getTheme } from '../utils/themeUtils';
-import { PRO_PLANS } from '../services/paystackService';
-import { getFirebaseToken } from '../config/firebase';
+import { initializePayment, PRO_PLANS, ProPlan } from '../services/paystackService';
 import { useAppStore } from '../store/appStore';
 
 interface ProUpgradeModalProps {
@@ -21,111 +20,37 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const [selectedPlan, setSelectedPlan] = useState(PRO_PLANS.MONTHLY);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const { setProStatus, readerSettings } = useAppStore();
+  const { isPro, setProStatus, readerSettings } = useAppStore();
   const theme = getTheme(themeMode as any);
 
   if (!isOpen) return null;
 
-  const showToast = (message: string, bgColor: string) => {
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: ${bgColor}; color: white; padding: 10px 20px;
-      border-radius: 10px; z-index: 1000; font-size: 14px;
-      animation: fadeInUp 0.3s ease;
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  };
-
-  // In ProUpgradeModal.tsx, update the handleUpgrade function:
-
+  // Updated handleUpgrade with CORRECT variable names
   const handleUpgrade = async () => {
+    if (isPro) {
+      onClose();
+      return;
+    }
+
     setProcessing(true);
     setError('');
-    
+
     try {
-      const token = await getFirebaseToken();
-      if (!token) {
-        throw new Error('Please sign in to upgrade');
+      const result = await initializePayment(userEmail, selectedPlan, userId);
+
+      if (result.success && result.paymentUrl) {
+        // Redirect to Paystack checkout page
+        window.location.href = result.paymentUrl;
+      } else {
+        throw new Error(result.error || 'Payment initialization failed');
       }
-      
-      const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const paymentsUrl = `${API_BASE_URL}/payments/initialize`;
-      
-      const response = await fetch(paymentsUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
-        },
-        body: JSON.stringify({
-          email: userEmail,
-          amount: selectedPlan.amount,
-          planId: selectedPlan.id,
-          userId: userId,
-        }),
-      });
-      
-      const data = await response.json();
-      
-      if (!data.success) {
-        throw new Error(data.error || 'Payment initialization failed');
-      }
-      
-      // Use Paystack inline popup instead of redirect
-      if (data.authorization_url) {
-        // Open in a new window (popup)
-        const width = 500;
-        const height = 600;
-        const left = (window.screen.width - width) / 2;
-        const top = (window.screen.height - height) / 2;
-        
-        const popup = window.open(
-          data.authorization_url,
-          'Paystack Payment',
-          `width=${width},height=${height},left=${left},top=${top},resizable=yes,scrollbars=yes`
-        );
-        
-        // Poll for payment completion
-        const interval = setInterval(async () => {
-          if (popup && popup.closed) {
-            clearInterval(interval);
-            // Verify payment after popup closes
-            const verifyResponse = await fetch(`${API_BASE_URL}/payments/verify/${data.reference}`);
-            const verifyData = await verifyResponse.json();
-            
-            if (verifyData.verified) {
-              // Update pro status
-              await fetch(`${API_BASE_URL}/users/set-pro-status`, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                  uid: userId,
-                  isPro: true,
-                  planId: selectedPlan.id,
-                }),
-              });
-              setProStatus(true);
-              onSuccess();
-              showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
-              onClose();
-            }
-          }
-        }, 1000);
-      }
-      
     } catch (err: any) {
-      console.error('❌ Upgrade error:', err);
+      console.error('❌ Upgrade error:', err.message);
       setError(err.message || 'Payment failed. Please try again.');
-    } finally {
       setProcessing(false);
     }
   };
+  
   const features = [
     'Unlimited highlights & notes',
     'All 50+ reading plans',
@@ -180,7 +105,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
 
           {/* Plans */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {Object.values(PRO_PLANS).map((plan) => (
+            {Object.values(PRO_PLANS).map((plan: any) => (
               <button
                 key={plan.id}
                 onClick={() => setSelectedPlan(plan)}
