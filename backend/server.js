@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const dotenv = require('dotenv');
 const axios = require('axios');
+const crypto = require('crypto');
 
 dotenv.config();
 
@@ -36,40 +37,168 @@ app.get('/api/health', (req, res) => {
 });
 
 // ============ MOCK PAYMENT ROUTES (NO EXTERNAL DEPENDENCIES) ============
-app.post('/api/payments/initialize', (req, res) => {
-  console.log('💳 Mock payment initialize called');
-  console.log('Request body:', req.body);
+// Initialize Paystack payment
+app.post('/api/payments/initialize', async (req, res) => {
+  console.log('💰 Initializing Paystack payment');
+  console.log('📦 Request body:', req.body);
   
   const { email, amount, planId, userId } = req.body;
   
-  // Generate a mock reference
-  const mockReference = `mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  // Validate required fields
+  if (!email || !amount || !planId) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Missing required fields: email, amount, planId' 
+    });
+  }
   
-  res.json({
-    success: true,
-    mock: true,
-    authorization_url: '#',
-    reference: mockReference,
-    message: 'Mock payment - Pro status will be activated'
-  });
+  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+  
+  // If no Paystack key, use mock mode
+  if (!PAYSTACK_SECRET || PAYSTACK_SECRET === 'sk_test_') {
+    console.log('⚠️ Using MOCK payment mode - No Paystack key found');
+    return res.json({
+      success: true,
+      mock: true,
+      authorization_url: '#',
+      reference: `mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      message: 'Mock payment - Pro status will be activated'
+    });
+  }
+  
+  try {
+    const response = await axios.post(
+      'https://api.paystack.co/transaction/initialize',
+      {
+        email,
+        amount: Math.round(amount),
+        currency: 'NGN',
+        metadata: {
+          userId,
+          planId,
+          custom_fields: [
+            { display_name: "User ID", variable_name: "user_id", value: userId },
+            { display_name: "Plan", variable_name: "plan", value: planId }
+          ]
+        },
+        callback_url: 'https://logos-bibleapp.netlify.app/payment-callback',
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${PAYSTACK_SECRET}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 10000
+      }
+    );
+    
+    console.log('✅ Payment initialized:', response.data.data.reference);
+    res.json({
+      success: true,
+      authorization_url: response.data.data.authorization_url,
+      reference: response.data.data.reference,
+    });
+  } catch (error) {
+    console.error('❌ Paystack error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.message || 'Payment initialization failed' 
+    });
+  }
 });
 
-app.get('/api/payments/verify/:reference', (req, res) => {
+// Verify Paystack payment
+app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
-  console.log(`🔍 Mock payment verification: ${reference}`);
+  console.log(`🔍 Verifying payment: ${reference}`);
   
-  res.json({
-    success: true,
-    verified: true,
-    mock: true,
-    data: {
-      reference: reference,
-      amount: 2990,
-      planId: 'monthly',
-      expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+  
+  if (!PAYSTACK_SECRET || PAYSTACK_SECRET === 'sk_test_') {
+    // Mock verification
+    return res.json({
+      success: true,
+      verified: true,
+      mock: true,
+      data: {
+        reference: reference,
+        amount: 2990,
+        planId: 'monthly',
+        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
+      }
+    });
+  }
+  
+  try {
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      {
+        headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` },
+        timeout: 10000
+      }
+    );
+    
+    const paymentData = response.data.data;
+    
+    if (paymentData.status === 'success') {
+      console.log('✅ Payment verified successfully');
+      const plan = getPlanDetails(paymentData.metadata?.planId || 'monthly');
+      const expiryDate = new Date();
+      expiryDate.setDate(expiryDate.getDate() + plan.days);
+      
+      res.json({
+        success: true,
+        verified: true,
+        data: {
+          reference: paymentData.reference,
+          amount: paymentData.amount,
+          userId: paymentData.metadata?.userId,
+          planId: paymentData.metadata?.planId,
+          expiryDate: expiryDate.toISOString(),
+        }
+      });
+    } else {
+      res.json({ success: false, verified: false, message: 'Payment not successful' });
     }
-  });
+  } catch (error) {
+    console.error('❌ Verification failed:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
+
+// Paystack webhook (for server-to-server notifications)
+app.post('/api/payments/webhook', async (req, res) => {
+  const signature = req.headers['x-paystack-signature'];
+  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
+  
+  if (PAYSTACK_SECRET && PAYSTACK_SECRET !== 'sk_test_') {
+    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET)
+      .update(JSON.stringify(req.body))
+      .digest('hex');
+    
+    if (hash !== signature) {
+      return res.status(401).send('Unauthorized');
+    }
+  }
+  
+  const event = req.body;
+  
+  if (event.event === 'charge.success') {
+    console.log('🎉 Webhook: Payment successful');
+    // Update user's pro status in your database here
+  }
+  
+  res.send(200);
+});
+
+function getPlanDetails(planId) {
+  const plans = {
+    monthly: { name: 'Monthly Pro', days: 30, amount: 2990 },
+    yearly: { name: 'Yearly Pro', days: 365, amount: 29900 },
+    lifetime: { name: 'Lifetime Access', days: 9999, amount: 99900 },
+  };
+  return plans[planId] || plans.monthly;
+}
 
 // ============ USER ROUTES ============
 app.post('/api/users/set-pro-status', (req, res) => {
