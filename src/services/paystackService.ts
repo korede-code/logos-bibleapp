@@ -39,14 +39,47 @@ declare global {
   }
 }
 
-export const initializePayment = (details: PaymentDetails): Promise<any> => {
+// Load Paystack script dynamically
+const loadPaystackScript = (): Promise<void> => {
   return new Promise((resolve, reject) => {
-    // Load Paystack script dynamically
+    // Check if already loaded
+    if (window.PaystackPop) {
+      resolve();
+      return;
+    }
+    
     const script = document.createElement('script');
     script.src = 'https://js.paystack.co/v1/inline.js';
+    script.async = true;
     script.onload = () => {
-      const paystack = new window.PaystackPop();
-      
+      // Wait a bit for Paystack to initialize
+      setTimeout(() => {
+        if (window.PaystackPop) {
+          resolve();
+        } else {
+          reject(new Error('Paystack failed to initialize'));
+        }
+      }, 500);
+    };
+    script.onerror = () => {
+      reject(new Error('Failed to load Paystack script'));
+    };
+    document.head.appendChild(script);
+  });
+};
+
+export const initializePayment = async (details: PaymentDetails): Promise<any> => {
+  try {
+    // Ensure Paystack script is loaded
+    await loadPaystackScript();
+    
+    if (!window.PaystackPop) {
+      throw new Error('Paystack is not available');
+    }
+    
+    const paystack = new window.PaystackPop();
+    
+    return new Promise((resolve, reject) => {
       paystack.newTransaction({
         key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_',
         email: details.email,
@@ -64,10 +97,9 @@ export const initializePayment = (details: PaymentDetails): Promise<any> => {
           if (details.onClose) details.onClose();
         },
       });
-    };
-    script.onerror = () => {
-      reject(new Error('Failed to load Paystack'));
-    };
-    document.body.appendChild(script);
-  });
+    });
+  } catch (error) {
+    console.error('Paystack initialization error:', error);
+    throw error;
+  }
 };
