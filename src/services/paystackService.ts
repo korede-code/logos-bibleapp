@@ -9,97 +9,121 @@ export interface PaymentDetails {
   onClose?: () => void;
 }
 
-export const PRO_PLANS = {
+export interface ProPlan {
+  id: string;
+  name: string;
+  amount: number;        // Amount in kobo (smallest currency unit)
+  amountNaira: string;    // Display amount
+  days: number;           // Subscription duration in days
+}
+
+export const PRO_PLANS: Record<string, ProPlan> = {
   MONTHLY: { 
     id: 'monthly', 
     name: 'Monthly Pro', 
-    amount: 2990,
+    amount: 2990,           // ₦2,990 in kobo
     amountNaira: '₦2,990', 
     days: 30,
   },
   YEARLY: { 
     id: 'yearly', 
     name: 'Yearly Pro', 
-    amount: 29900,
+    amount: 29900,          // ₦29,900 in kobo
     amountNaira: '₦29,900', 
     days: 365,
   },
   LIFETIME: { 
     id: 'lifetime', 
     name: 'Lifetime Access', 
-    amount: 99900,
+    amount: 99900,          // ₦99,900 in kobo
     amountNaira: '₦99,900', 
     days: 9999,
   },
 };
 
-declare global {
-  interface Window {
-    PaystackPop: any;
-  }
-}
+const API_BASE_URL = 'https://logos-daily-backend.onrender.com/api';
 
-// Load Paystack script dynamically
-const loadPaystackScript = (): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    // Check if already loaded
-    if (window.PaystackPop) {
-      resolve();
-      return;
+/**
+ * Initialize a payment with Paystack via your backend
+ */
+export const initializePayment = async (
+  email: string,
+  plan: ProPlan,
+  userId?: string
+): Promise<{ success: boolean; paymentUrl?: string; reference?: string; error?: string }> => {
+  try {
+    const response = await fetch(`${API_BASE_URL}/payments/initialize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        amount: plan.amount / 100, // Convert kobo to naira for the backend
+        plan: plan.id,
+        userId: userId || 'guest',
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || 'Payment initialization failed',
+      };
     }
-    
-    const script = document.createElement('script');
-    script.src = 'https://js.paystack.co/v1/inline.js';
-    script.async = true;
-    script.onload = () => {
-      // Wait a bit for Paystack to initialize
-      setTimeout(() => {
-        if (window.PaystackPop) {
-          resolve();
-        } else {
-          reject(new Error('Paystack failed to initialize'));
-        }
-      }, 500);
+
+    return {
+      success: true,
+      paymentUrl: data.paymentUrl,
+      reference: data.reference,
     };
-    script.onerror = () => {
-      reject(new Error('Failed to load Paystack script'));
+  } catch (error: any) {
+    console.error('Payment initialization error:', error);
+    return {
+      success: false,
+      error: 'Unable to connect to payment service. Please try again.',
     };
-    document.head.appendChild(script);
-  });
+  }
 };
 
-export const initializePayment = async (details: PaymentDetails): Promise<any> => {
+/**
+ * Verify a payment with Paystack via your backend
+ */
+export const verifyPayment = async (reference: string): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
-    // Ensure Paystack script is loaded
-    await loadPaystackScript();
-    
-    if (!window.PaystackPop) {
-      throw new Error('Paystack is not available');
+    const response = await fetch(`${API_BASE_URL}/payments/verify/${reference}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      return {
+        success: false,
+        error: data.error || 'Payment verification failed',
+      };
     }
-    
-    const paystack = new window.PaystackPop();
-    
-    return new Promise((resolve, reject) => {
-      paystack.newTransaction({
-        key: import.meta.env.VITE_PAYSTACK_PUBLIC_KEY || 'pk_test_',
-        email: details.email,
-        amount: details.amount,
-        reference: details.reference,
-        metadata: details.metadata,
-        onSuccess: (response: any) => {
-          console.log('Payment successful:', response);
-          resolve(response);
-          if (details.callback) details.callback(response);
-        },
-        onCancel: () => {
-          console.log('Payment cancelled');
-          reject(new Error('Payment cancelled'));
-          if (details.onClose) details.onClose();
-        },
-      });
-    });
-  } catch (error) {
-    console.error('Paystack initialization error:', error);
-    throw error;
+
+    return {
+      success: true,
+      data: data.data,
+    };
+  } catch (error: any) {
+    console.error('Payment verification error:', error);
+    return {
+      success: false,
+      error: 'Unable to verify payment. Please try again.',
+    };
   }
+};
+
+/**
+ * Calculate amount in kobo from naira
+ */
+export const toKobo = (naira: number): number => {
+  return Math.round(naira * 100);
+};
+
+/**
+ * Format amount for display
+ */
+export const formatNaira = (kobo: number): string => {
+  return `₦${(kobo / 100).toLocaleString()}`;
 };
