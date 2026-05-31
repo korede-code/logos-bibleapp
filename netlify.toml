@@ -2,15 +2,6 @@
   command = "npm run build"
   publish = "dist"
 
-[build.environment]
-  VITE_API_URL = "https://logos-daily-backend.onrender.com/api"
-  VITE_FIREBASE_API_KEY=AIzaSyDgkCgV7Noe8IdEkQM57dIFZCbYGVQ1HUg
-  VITE_FIREBASE_AUTH_DOMAIN=logos-daily.firebaseapp.com
-  VITE_FIREBASE_PROJECT_ID=logos-daily
-  VITE_FIREBASE_STORAGE_BUCKET=logos-daily.firebasestorage.app
-  VITE_FIREBASE_MESSAGING_SENDER_ID=198751095778
-  VITE_FIREBASE_APP_ID=1:198751095778:web:f321db0dbdea4388cc07bb
-  VITE_PAYSTACK_PUBLIC_KEY=pk_test_73de2f757c4670f6b20a80137c95fb6a5433ab7c
 
   [[redirects]]
   from = "/*"
