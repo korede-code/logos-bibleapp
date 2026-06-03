@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { X, Crown, Check, Star, Zap, Shield, CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getTheme } from '../utils/themeUtils';
-import { initializePayment, PRO_PLANS, ProPlan } from '../services/paystackService';
+import { PRO_PLANS, initializePayment } from '../services/paystackService';
 import { useAppStore } from '../store/appStore';
 
 interface ProUpgradeModalProps {
@@ -20,49 +20,74 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const [selectedPlan, setSelectedPlan] = useState(PRO_PLANS.MONTHLY);
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
-  const { isPro, setProStatus, readerSettings } = useAppStore();
+  const { setProStatus, readerSettings } = useAppStore();
   const theme = getTheme(themeMode as any);
 
   if (!isOpen) return null;
 
-  // Updated handleUpgrade with CORRECT variable names
-  const handleUpgrade = async () => {
-    if (isPro) {
-      onClose();
-      return;
-    }
+  const showToast = (message: string, bgColor: string) => {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: ${bgColor}; color: white; padding: 10px 20px;
+      border-radius: 10px; z-index: 1000; font-size: 14px;
+      animation: fadeInUp 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  };
 
+  const handleUpgrade = async () => {
     setProcessing(true);
     setError('');
-
+    
     try {
-      const result = await initializePayment(userEmail, selectedPlan, userId);
-
-      if (result.success && result.paymentUrl) {
-        // Redirect to Paystack checkout page
-        window.location.href = result.paymentUrl;
-      } else {
-        throw new Error(result.error || 'Payment initialization failed');
+      console.log('🚀 Starting Paystack payment...');
+      console.log('Selected plan:', selectedPlan);
+      console.log('User email:', userEmail);
+      
+      const API_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
+      
+      // Initialize payment with backend
+      const response = await fetch(`${API_URL}/payments/initialize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: userEmail,
+          amount: selectedPlan.amount,
+          planId: selectedPlan.id,
+          userId: userId,
+        }),
+      });
+      
+      const data = await response.json();
+      console.log('Payment init response:', data);
+      
+      if (!data.success) {
+        throw new Error(data.error || 'Payment initialization failed');
       }
+      
+      // Redirect to Paystack payment page
+      if (data.authorization_url) {
+        // Store the reference for verification after payment
+        localStorage.setItem('paystack_reference', data.reference);
+        localStorage.setItem('paystack_plan', selectedPlan.id);
+        
+        // Redirect to Paystack
+        window.location.href = data.authorization_url;
+      } else {
+        throw new Error('No payment URL received');
+      }
+      
     } catch (err: any) {
-      console.error('❌ Upgrade error:', err.message);
+      console.error('❌ Upgrade error:', err);
       setError(err.message || 'Payment failed. Please try again.');
       setProcessing(false);
     }
   };
-  
-  const features = [
-    'Unlimited highlights & notes',
-    'All 50+ reading plans',
-    'Verse image creator',
-    'Advanced search filters',
-    'Cross-device sync',
-    'Priority email support',
-    'Monthly prayer journal export',
-    'Custom reading plans',
-    'Modern Bible translations (NIV, ESV, NLT)',
-    'Ad-free experience',
-  ];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
@@ -105,7 +130,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
 
           {/* Plans */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {Object.values(PRO_PLANS).map((plan: any) => (
+            {Object.values(PRO_PLANS).map((plan) => (
               <button
                 key={plan.id}
                 onClick={() => setSelectedPlan(plan)}
@@ -141,7 +166,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
               <Star size={14} style={{ color: theme.accent }} />
               Everything in Logos Pro:
             </h4>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
               {features.map((feature, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Check size={12} style={{ color: '#4CAF50' }} />
@@ -166,7 +191,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
             ) : (
               <>
                 <CreditCard size={18} />
-                Upgrade to {selectedPlan.name} - {selectedPlan.amountNaira}
+                Pay {selectedPlan.amountNaira} with Paystack
               </>
             )}
           </button>

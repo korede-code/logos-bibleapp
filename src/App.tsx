@@ -86,6 +86,7 @@ import React, { useEffect } from 'react';
 import { useAppStore } from './store/appStore';
 import { getTheme } from './utils/themeUtils';
 
+
 // Screen Components
 import HomeScreen from './components/HomeScreen';
 import ReaderScreen from './components/ReaderScreen';
@@ -100,6 +101,8 @@ import SettingsScreen from './components/SettingsScreen';
 import BottomNav from './components/BottomNav';
 import SubscriptionScreen from './components/SubscriptionScreen';
 import PaymentCallback from './components/PaymentCallback';
+import { getUserData, handleRedirectResult } from './config/firebase';
+
 
 // ─── Screen Router ────────────────────────────────────────────────────────────
 
@@ -118,11 +121,34 @@ const SCREENS: Record<string, React.ComponentType> = {
   'payment-callback': PaymentCallback,
 };
 
+
 // ─── Mobile Frame ─────────────────────────────────────────────────────────────
 
 const App: React.FC = () => {
+  const { setCurrentUser, setUserData } = useAppStore();
   const { currentScreen, readerSettings } = useAppStore();
   const theme = getTheme(readerSettings.theme);
+
+  useEffect(() => {
+    const handleRedirect = async () => {
+      const result = await handleRedirectResult();
+      if (result.success && result.user) {
+        console.log('User signed in:', result.user.email);
+        setCurrentUser(result.user);
+        
+        // Get user data from Firestore
+        const userData = await getUserData(result.user.uid);
+        if (userData) {
+          setUserData(userData);
+          if (userData.isPro) {
+            useAppStore.getState().setProStatus(true);
+          }
+        }
+      }
+    };
+    
+    handleRedirect();
+  }, [setCurrentUser, setUserData]);
 
   // Apply theme to document
   useEffect(() => {

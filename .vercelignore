@@ -1,0 +1,9 @@
+backend/
+
+node_modules/
+.env
+.env.local
+.env.production
+
+.git/
+.gitignore

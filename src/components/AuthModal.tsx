@@ -36,26 +36,18 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
-    try {
-      const result = await signInWithGoogle();
-      
-      if (result.success && result.user) {
-        const userData = await getUserData(result.user.uid);
-        setCurrentUser(result.user);
-        setUserData(userData);
-        if (onSuccess) onSuccess(result.user);
-        showToast(`Welcome ${result.user.displayName || 'User'}!`, '#4CAF50');
-        onClose();
-      } else {
-        setError(result.error || 'Google sign in failed');
-      }
-    } catch (err: any) {
-      console.error('Google sign in error:', err);
-      setError(err.message || 'Google sign in failed');
+    
+    const result = await signInWithGoogle();
+    
+    if (result.success) {
+      // The page will redirect to Google
+      // After sign-in, the handleRedirectResult in App.tsx will process the result
+      showToast('Redirecting to Google...', theme.accent);
+    } else {
+      setError(result.error || 'Google sign in failed');
+      setLoading(false);
     }
-    setLoading(false);
   };
-
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);

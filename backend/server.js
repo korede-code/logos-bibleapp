@@ -10,18 +10,24 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 
-// Allow all origins for testing (we'll restrict later)
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://logos-daily.web.app',
+  'https://logos-daily.firebaseapp.com',
+  'https://app.logosdaily.com' // Your custom domain
+];
+
 app.use(cors({
-    origin: '*',  // Allow all origins temporarily
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
 }));
-
-// Handle preflight requests explicitly
-app.options('*', cors());
-
-// Apply the CORS middleware with your configuration
-
 
 app.use(express.json());
 
@@ -36,7 +42,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ============ MOCK PAYMENT ROUTES (NO EXTERNAL DEPENDENCIES) ============
+
 // Initialize Paystack payment
 app.post('/api/payments/initialize', async (req, res) => {
   console.log('💰 Initializing Paystack payment');
@@ -54,15 +60,12 @@ app.post('/api/payments/initialize', async (req, res) => {
   
   const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
   
-  // If no Paystack key, use mock mode
-  if (!PAYSTACK_SECRET || PAYSTACK_SECRET === 'sk_test_') {
-    console.log('⚠️ Using MOCK payment mode - No Paystack key found');
-    return res.json({
-      success: true,
-      mock: true,
-      authorization_url: '#',
-      reference: `mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-      message: 'Mock payment - Pro status will be activated'
+  // Check if secret key exists
+  if (!PAYSTACK_SECRET) {
+    console.error('❌ PAYSTACK_SECRET_KEY not set');
+    return res.status(500).json({ 
+      success: false, 
+      error: 'Payment system not configured' 
     });
   }
   
@@ -81,7 +84,7 @@ app.post('/api/payments/initialize', async (req, res) => {
             { display_name: "Plan", variable_name: "plan", value: planId }
           ]
         },
-        callback_url: 'https://logos-bibleapp.netlify.app/payment-callback',
+        callback_url: 'https://logos-daily.web.app/payment-callback',
       },
       {
         headers: {
@@ -107,26 +110,15 @@ app.post('/api/payments/initialize', async (req, res) => {
   }
 });
 
-// Verify Paystack payment
+// Verify payment
 app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log(`🔍 Verifying payment: ${reference}`);
   
   const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
   
-  if (!PAYSTACK_SECRET || PAYSTACK_SECRET === 'sk_test_') {
-    // Mock verification
-    return res.json({
-      success: true,
-      verified: true,
-      mock: true,
-      data: {
-        reference: reference,
-        amount: 2990,
-        planId: 'monthly',
-        expiryDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()
-      }
-    });
+  if (!PAYSTACK_SECRET) {
+    return res.status(500).json({ success: false, error: 'Paystack not configured' });
   }
   
   try {
@@ -142,7 +134,14 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     
     if (paymentData.status === 'success') {
       console.log('✅ Payment verified successfully');
-      const plan = getPlanDetails(paymentData.metadata?.planId || 'monthly');
+      
+      // Calculate expiry date based on plan
+      const plans = {
+        monthly: { days: 30 },
+        yearly: { days: 365 },
+        lifetime: { days: 9999 }
+      };
+      const plan = plans[paymentData.metadata?.planId || 'monthly'];
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + plan.days);
       
@@ -165,6 +164,7 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
 
 // Paystack webhook (for server-to-server notifications)
 app.post('/api/payments/webhook', async (req, res) => {
