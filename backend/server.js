@@ -44,30 +44,27 @@ app.get('/api/health', (req, res) => {
 
 
 // Initialize Paystack payment
+// backend/server.js - Add this payment endpoint
+const axios = require('axios');
+
+// Initialize Paystack payment
 app.post('/api/payments/initialize', async (req, res) => {
-  console.log('💰 Initializing Paystack payment');
-  console.log('📦 Request body:', req.body);
+  console.log('💰 Payment endpoint called');
+  console.log('Request body:', req.body);
   
   const { email, amount, planId, userId } = req.body;
-  
-  // Validate required fields
-  if (!email || !amount || !planId) {
-    return res.status(400).json({ 
-      success: false, 
-      error: 'Missing required fields: email, amount, planId' 
-    });
-  }
-  
   const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
   
   // Check if secret key exists
   if (!PAYSTACK_SECRET) {
-    console.error('❌ PAYSTACK_SECRET_KEY not set');
+    console.error('❌ PAYSTACK_SECRET_KEY not found in environment variables');
     return res.status(500).json({ 
       success: false, 
-      error: 'Payment system not configured' 
+      error: 'Payment system not configured. Please add PAYSTACK_SECRET_KEY.' 
     });
   }
+  
+  console.log('✅ Paystack secret key found');
   
   try {
     const response = await axios.post(
@@ -79,10 +76,6 @@ app.post('/api/payments/initialize', async (req, res) => {
         metadata: {
           userId,
           planId,
-          custom_fields: [
-            { display_name: "User ID", variable_name: "user_id", value: userId },
-            { display_name: "Plan", variable_name: "plan", value: planId }
-          ]
         },
         callback_url: 'https://logos-daily.web.app/payment-callback',
       },
@@ -95,7 +88,8 @@ app.post('/api/payments/initialize', async (req, res) => {
       }
     );
     
-    console.log('✅ Payment initialized:', response.data.data.reference);
+    console.log('✅ Paystack response:', response.data);
+    
     res.json({
       success: true,
       authorization_url: response.data.data.authorization_url,
@@ -110,7 +104,7 @@ app.post('/api/payments/initialize', async (req, res) => {
   }
 });
 
-// Verify payment
+// Verify payment endpoint
 app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log(`🔍 Verifying payment: ${reference}`);
@@ -135,13 +129,14 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     if (paymentData.status === 'success') {
       console.log('✅ Payment verified successfully');
       
-      // Calculate expiry date based on plan
+      // Get plan details
+      const planId = paymentData.metadata?.planId || 'monthly';
       const plans = {
-        monthly: { days: 30 },
-        yearly: { days: 365 },
-        lifetime: { days: 9999 }
+        monthly: { days: 30, name: 'Monthly Pro' },
+        yearly: { days: 365, name: 'Yearly Pro' },
+        lifetime: { days: 9999, name: 'Lifetime Access' }
       };
-      const plan = plans[paymentData.metadata?.planId || 'monthly'];
+      const plan = plans[planId];
       const expiryDate = new Date();
       expiryDate.setDate(expiryDate.getDate() + plan.days);
       
@@ -152,7 +147,8 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
           reference: paymentData.reference,
           amount: paymentData.amount,
           userId: paymentData.metadata?.userId,
-          planId: paymentData.metadata?.planId,
+          planId: planId,
+          planName: plan.name,
           expiryDate: expiryDate.toISOString(),
         }
       });
@@ -164,6 +160,7 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
 
 
 // Paystack webhook (for server-to-server notifications)

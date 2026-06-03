@@ -2,7 +2,6 @@
 import React, { useState } from 'react';
 import { X, Crown, Check, Star, Zap, Shield, CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getTheme } from '../utils/themeUtils';
-import { PRO_PLANS, initializePayment } from '../services/paystackService';
 import { useAppStore } from '../store/appStore';
 
 interface ProUpgradeModalProps {
@@ -14,6 +13,30 @@ interface ProUpgradeModalProps {
   themeMode?: string;
 }
 
+const PRO_PLANS = {
+  MONTHLY: { 
+    id: 'monthly', 
+    name: 'Monthly Pro', 
+    amount: 299000,
+    amountNaira: '₦2,990', 
+    days: 30,
+  },
+  YEARLY: { 
+    id: 'yearly', 
+    name: 'Yearly Pro', 
+    amount: 2990000,
+    amountNaira: '₦29,900', 
+    days: 365,
+  },
+  LIFETIME: { 
+    id: 'lifetime', 
+    name: 'Lifetime Access', 
+    amount: 9990000,
+    amountNaira: '₦99,900', 
+    days: 9999,
+  },
+};
+
 const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ 
   isOpen, onClose, userEmail, userId, onSuccess, themeMode = 'dark' 
 }) => {
@@ -22,6 +45,20 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const [error, setError] = useState('');
   const { setProStatus, readerSettings } = useAppStore();
   const theme = getTheme(themeMode as any);
+
+  // Define features array here
+  const features = [
+    'Unlimited highlights & notes',
+    'All 50+ reading plans',
+    'Verse image creator',
+    'Advanced search filters',
+    'Cross-device sync',
+    'Priority email support',
+    'Monthly prayer journal export',
+    'Custom reading plans',
+    'Modern Bible translations (NIV, ESV, NLT)',
+    'Ad-free experience',
+  ];
 
   if (!isOpen) return null;
 
@@ -43,13 +80,13 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
     setError('');
     
     try {
-      console.log('🚀 Starting Paystack payment...');
-      console.log('Selected plan:', selectedPlan);
-      console.log('User email:', userEmail);
+      console.log('💰 Starting Paystack payment...');
       
       const API_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
       
-      // Initialize payment with backend
+      // Store user ID for callback
+      localStorage.setItem('userId', userId);
+      
       const response = await fetch(`${API_URL}/payments/initialize`, {
         method: 'POST',
         headers: {
@@ -70,13 +107,11 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         throw new Error(data.error || 'Payment initialization failed');
       }
       
-      // Redirect to Paystack payment page
+      // Store reference for callback
+      localStorage.setItem('paystack_reference', data.reference);
+      
+      // Redirect to Paystack
       if (data.authorization_url) {
-        // Store the reference for verification after payment
-        localStorage.setItem('paystack_reference', data.reference);
-        localStorage.setItem('paystack_plan', selectedPlan.id);
-        
-        // Redirect to Paystack
         window.location.href = data.authorization_url;
       } else {
         throw new Error('No payment URL received');
@@ -88,7 +123,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       setProcessing(false);
     }
   };
-
+  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div
@@ -166,7 +201,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
               <Star size={14} style={{ color: theme.accent }} />
               Everything in Logos Pro:
             </h4>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="grid grid-cols-2 md:grid-cols-2 gap-2">
               {features.map((feature, i) => (
                 <div key={i} className="flex items-center gap-2">
                   <Check size={12} style={{ color: '#4CAF50' }} />

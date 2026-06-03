@@ -21,21 +21,21 @@ export const PRO_PLANS: Record<string, ProPlan> = {
   MONTHLY: { 
     id: 'monthly', 
     name: 'Monthly Pro', 
-    amount: 2990,           // ₦2,990 in kobo
+    amount: 299000,           // ₦2,990 in kobo
     amountNaira: '₦2,990', 
     days: 30,
   },
   YEARLY: { 
     id: 'yearly', 
     name: 'Yearly Pro', 
-    amount: 29900,          // ₦29,900 in kobo
+    amount: 299000,          // ₦29,900 in kobo
     amountNaira: '₦29,900', 
     days: 365,
   },
   LIFETIME: { 
     id: 'lifetime', 
     name: 'Lifetime Access', 
-    amount: 99900,          // ₦99,900 in kobo
+    amount: 9990000,          // ₦99,900 in kobo
     amountNaira: '₦99,900', 
     days: 9999,
   },

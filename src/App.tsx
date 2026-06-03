@@ -129,6 +129,11 @@ const App: React.FC = () => {
   const { currentScreen, readerSettings } = useAppStore();
   const theme = getTheme(readerSettings.theme);
 
+  // Add to your routing logic
+  if (window.location.pathname === '/payment-callback') {
+    return <PaymentCallback />;
+  }
+
   useEffect(() => {
     const handleRedirect = async () => {
       const result = await handleRedirectResult();
