@@ -10,23 +10,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://logos-daily.web.app',
-  'https://logos-daily.firebaseapp.com',
-  'https://app.logosdaily.com' // Your custom domain
-];
-
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin) return callback(null, true);
-    if (allowedOrigins.indexOf(origin) !== -1) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  credentials: true
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 app.use(express.json());
@@ -45,7 +32,7 @@ app.get('/api/health', (req, res) => {
 
 // Initialize Paystack payment
 // backend/server.js - Add this payment endpoint
-const axios = require('axios');
+//const axios = require('axios');
 
 // Initialize Paystack payment
 app.post('/api/payments/initialize', async (req, res) => {
