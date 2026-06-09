@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { X, Crown, Check, Star, Zap, Shield, CreditCard, Loader2, AlertCircle } from 'lucide-react';
 import { getTheme } from '../utils/themeUtils';
 import { useAppStore } from '../store/appStore';
+import { updateUserProStatus } from '../config/firebase';
 
 interface ProUpgradeModalProps {
   isOpen: boolean;
@@ -17,21 +18,21 @@ const PRO_PLANS = {
   MONTHLY: { 
     id: 'monthly', 
     name: 'Monthly Pro', 
-    amount: 299000,
+    amount: 299000, // ₦2,990 in kobo
     amountNaira: '₦2,990', 
     days: 30,
   },
   YEARLY: { 
     id: 'yearly', 
     name: 'Yearly Pro', 
-    amount: 2990000,
+    amount: 2990000, // ₦29,900 in kobo
     amountNaira: '₦29,900', 
     days: 365,
   },
   LIFETIME: { 
     id: 'lifetime', 
     name: 'Lifetime Access', 
-    amount: 9990000,
+    amount: 9990000, // ₦99,900 in kobo
     amountNaira: '₦99,900', 
     days: 9999,
   },
@@ -46,7 +47,6 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const { setProStatus, readerSettings } = useAppStore();
   const theme = getTheme(themeMode as any);
 
-  // Define features array here
   const features = [
     'Unlimited highlights & notes',
     'All 50+ reading plans',
@@ -75,55 +75,96 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
     setTimeout(() => toast.remove(), 3000);
   };
 
+  // In ProUpgradeModal.tsx, update the handleUpgrade function:
+
   const handleUpgrade = async () => {
     setProcessing(true);
     setError('');
-    
+
+    let currentUserId = userId;
+    let currentUserEmail = userEmail;
+    let data: any;
+
     try {
       console.log('💰 Starting Paystack payment...');
-      
+
+      if (!currentUserId) {
+        const savedUser = localStorage.getItem('logos_user');
+        if (savedUser) {
+          const user = JSON.parse(savedUser);
+          currentUserId = user.uid;
+          currentUserEmail = user.email;
+        }
+      }
+
+      if (!currentUserEmail) {
+        throw new Error('Please sign in to upgrade to Pro');
+      }
+
+      // Save user ID for callback
+      localStorage.setItem('pendingProUserId', currentUserId || '');
+      localStorage.setItem('pendingProPlan', selectedPlan.id);
+
       const API_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
-      
-      // Store user ID for callback
-      localStorage.setItem('userId', userId);
-      
+
       const response = await fetch(`${API_URL}/payments/initialize`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          email: userEmail,
+          email: currentUserEmail,
           amount: selectedPlan.amount,
           planId: selectedPlan.id,
-          userId: userId,
+          userId: currentUserId || `user_${Date.now()}`,
         }),
       });
-      
-      const data = await response.json();
+
+      data = await response.json();
       console.log('Payment init response:', data);
-      
-      if (!data.success) {
+
+      if (!data.success && !data.mock) {
         throw new Error(data.error || 'Payment initialization failed');
       }
-      
-      // Store reference for callback
-      localStorage.setItem('paystack_reference', data.reference);
-      
-      // Redirect to Paystack
+
       if (data.authorization_url) {
         window.location.href = data.authorization_url;
-      } else {
-        throw new Error('No payment URL received');
+        return;
       }
-      
+
+      if (data.verified || data.mock) {
+        const userId = currentUserId || localStorage.getItem('pendingProUserId');
+        
+        if (userId) {
+          // Save to localStorage as backup
+          localStorage.setItem(`isPro_${userId}`, 'true');
+          
+          // Save to Firestore - THIS IS KEY!
+          const expiryDate = new Date();
+          expiryDate.setDate(expiryDate.getDate() + selectedPlan.days);
+          await updateUserProStatus(userId, true, expiryDate.toISOString());
+          
+          console.log(`✅ Pro status saved to Firestore for user: ${userId}`);
+        }
+        
+        // Update store
+        setProStatus(true);
+        
+        // Call onSuccess
+        onSuccess();
+        
+        showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
+        onClose();
+      }
+
+      throw new Error('No payment URL received');
     } catch (err: any) {
       console.error('❌ Upgrade error:', err);
       setError(err.message || 'Payment failed. Please try again.');
       setProcessing(false);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div

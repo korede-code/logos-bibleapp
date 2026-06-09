@@ -7,3 +7,147 @@ node_modules/
 
 .git/
 .gitignore
+
+
+// In ProUpgradeModal.tsx
+import { initializePayment, PRO_PLANS, ProPlan } from '../services/paystackService';
+
+// Inside the component, replace handleUpgrade:
+const handleUpgrade = async () => {
+  if (isPro) {
+    onClose();
+    return;
+  }
+
+  setProcessing(true);
+  setError('');
+
+  try {
+    const result = await initializePayment(userEmail, selectedPlan, userId);
+
+    if (result.success && result.paymentUrl) {
+      // Redirect to Paystack checkout page
+      window.location.href = result.paymentUrl;
+    } else {
+      throw new Error(result.error || 'Payment initialization failed');
+    }
+  } catch (err: any) {
+    console.error('❌ Upgrade error:', err.message);
+    setError(err.message || 'Payment failed. Please try again.');
+    setProcessing(false);
+  }
+};
+
+
+{
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build --outDir dist",
+    "preview": "vite preview"
+  }
+}
+
+
+{
+  "hosting": {
+    "public": "dist",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(jpg|jpeg|gif|png|svg|webp|ico)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      },
+      {
+        "source": "**/*.@(js|css)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      }
+    ]
+  }
+}
+
+
+function App() {
+  return (
+    <>
+      <EnvChecker />
+      {/* rest of your app */}
+    </>
+  );
+}
+
+
+
+const allowedOrigins = [
+  'http://localhost:5173',
+  'https://logos-daily.web.app',
+  'https://logos-daily.firebaseapp.com',
+  'https://app.logosdaily.com' // Your custom domain
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+
+
+// In SettingsScreen.tsx
+const SettingsScreen: React.FC = () => {
+  const { readerSettings, navigate, isPro, currentUser, setCurrentUser, setProStatus, logout } = useAppStore();
+  const theme = getTheme(readerSettings.theme);
+  const [showAuthModal, setShowAuthModal] = useState(false);
+  const [showProModal, setShowProModal] = useState(false);
+  
+  // Listen to auth state changes
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        // Check if user has pro status
+        const savedProStatus = localStorage.getItem(`isPro_${user.uid}`) === 'true';
+        setCurrentUser(user);
+        setProStatus(savedProStatus);
+      } else {
+        setCurrentUser(null);
+        setProStatus(false);
+      }
+    });
+    return () => unsubscribe();
+  }, [setCurrentUser, setProStatus]);
+  
+  // ... rest of component
+};

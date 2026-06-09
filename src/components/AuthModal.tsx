@@ -33,36 +33,76 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
 
   if (!isOpen) return null;
 
+  // In AuthModal.tsx - update handleGoogleSignIn
+  // In AuthModal.tsx, update the sign-in handlers
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
     
-    const result = await signInWithGoogle();
-    
-    if (result.success) {
-      // The page will redirect to Google
-      // After sign-in, the handleRedirectResult in App.tsx will process the result
-      showToast('Redirecting to Google...', theme.accent);
-    } else {
-      setError(result.error || 'Google sign in failed');
+    try {
+      const result = await signInWithGoogle();
+      console.log('AuthModal: Google sign in result', result);
+      
+      if (result.success && result.user) {
+        // Save user to localStorage
+        const userData = {
+          uid: result.user.uid,
+          email: result.user.email,
+          displayName: result.user.displayName,
+          photoURL: result.user.photoURL
+        };
+        localStorage.setItem('logos_user', JSON.stringify(userData));
+        console.log('User saved to localStorage:', userData);
+        
+        // Check if user has pro status
+        const userProStatus = localStorage.getItem(`isPro_${result.user.uid}`) === 'true';
+        
+        // Update store
+        if (onSuccess) {
+          onSuccess({
+            ...result.user,
+            isPro: userProStatus
+          });
+        }
+        
+        showToast(`Welcome ${result.user.displayName || result.user.email}!`, '#4CAF50');
+        onClose();
+      } else {
+        setError(result.error || 'Google sign in failed');
+      }
+    } catch (err: any) {
+      console.error('AuthModal: Google sign in error', err);
+      setError(err.message || 'Google sign in failed');
+    } finally {
       setLoading(false);
     }
   };
+
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
-    setSuccessMessage('');
-
+    
     try {
       if (mode === 'signup') {
         const result = await signUpWithEmail(email, password, displayName);
+        console.log('Sign up result:', result);
+        
         if (result.success && result.user) {
-          const userData = await getUserData(result.user.uid);
-          setCurrentUser(result.user);
-          setUserData(userData);
-          if (onSuccess) onSuccess(result.user);
-          showToast(`Welcome ${displayName || email}! Your account has been created.`, '#4CAF50');
+          // Save user to localStorage
+          const userData = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoURL
+          };
+          localStorage.setItem('logos_user', JSON.stringify(userData));
+          
+          if (onSuccess) {
+            onSuccess(result.user);
+          }
+          showToast(`Welcome ${displayName || email}!`, '#4CAF50');
           onClose();
         } else {
           setError(result.error || 'Sign up failed');
@@ -70,37 +110,36 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
       } 
       else if (mode === 'signin') {
         const result = await signInWithEmail(email, password);
+        console.log('Sign in result:', result);
+        
         if (result.success && result.user) {
-          const userData = await getUserData(result.user.uid);
-          setCurrentUser(result.user);
-          setUserData(userData);
-          if (onSuccess) onSuccess(result.user);
+          // Save user to localStorage
+          const userData = {
+            uid: result.user.uid,
+            email: result.user.email,
+            displayName: result.user.displayName,
+            photoURL: result.user.photoURL
+          };
+          localStorage.setItem('logos_user', JSON.stringify(userData));
+          
+          if (onSuccess) {
+            onSuccess(result.user);
+          }
           showToast(`Welcome back!`, '#4CAF50');
           onClose();
         } else {
-          setError(result.error || 'Invalid email or password');
-        }
-      } 
-      else if (mode === 'forgot') {
-        const result = await resetPassword(email);
-        if (result.success) {
-          setSuccessMessage('Password reset email sent! Check your inbox.');
-          setTimeout(() => {
-            setMode('signin');
-            setSuccessMessage('');
-          }, 3000);
-        } else {
-          setError(result.error || 'Password reset failed');
+          setError(result.error || 'Sign in failed');
         }
       }
     } catch (err: any) {
       console.error('Auth error:', err);
       setError(err.message || 'Authentication failed');
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
+  
   const showToast = (message: string, bgColor: string) => {
     const toast = document.createElement('div');
     toast.textContent = message;

@@ -5,7 +5,7 @@
  * - Active plans progress tracking
  * - Daily reading assignments
  * - Real Bible content from API
- * - Pro plan restrictions
+ * - Pro plan restrictions with working upgrade buttons
  */
 
 import React, { useState, useEffect } from 'react';
@@ -31,6 +31,7 @@ import {
   Crown,
   Lock
 } from 'lucide-react';
+import ProUpgradeModal from './ProUpgradeModal';
 
 // Reading Plans Data
 const READING_PLANS_DATA = [
@@ -61,7 +62,7 @@ const READING_PLANS_DATA = [
     duration: 90,
     description: 'Journey through all 27 books of the New Testament in 90 days.',
     category: 'New Testament',
-    isPro: true,  // ← PRO PLAN
+    isPro: true,
     readings: generateNTReadings()
   },
   {
@@ -71,7 +72,7 @@ const READING_PLANS_DATA = [
     duration: 21,
     description: 'A thematic 21-day study of all the recorded miracles of Jesus across all four gospels.',
     category: 'Thematic',
-    isPro: true,  // ← PRO PLAN
+    isPro: true,
     readings: generateMiraclesReadings()
   },
   {
@@ -81,7 +82,7 @@ const READING_PLANS_DATA = [
     duration: 365,
     description: 'Read the Bible in the order events actually occurred, blending books for historical context.',
     category: 'Historical',
-    isPro: true,  // ← PRO PLAN
+    isPro: true,
     readings: generateReadings(365)
   },
   {
@@ -91,7 +92,7 @@ const READING_PLANS_DATA = [
     duration: 7,
     description: 'An intensive 7-day meditation on the greatest sermon ever preached (Matthew 5-7).',
     category: 'Thematic',
-    isPro: true,  // ← PRO PLAN
+    isPro: true,
     readings: generateSermonReadings()
   }
 ];
@@ -204,7 +205,8 @@ const PlanCard: React.FC<{
   onView: () => void;
   isPro: boolean;
   theme: any;
-}> = ({ plan, activePlan, onStart, onView, isPro, theme }) => {
+  onUpgradeClick: () => void;
+}> = ({ plan, activePlan, onStart, onView, isPro, theme, onUpgradeClick }) => {
   const progress = activePlan ? (activePlan.completedDays.length / plan.duration) * 100 : 0;
   const isLocked = plan.isPro && !isPro;
   
@@ -252,13 +254,20 @@ const PlanCard: React.FC<{
       )}
       
       {isLocked ? (
-        <button
-          disabled
-          className="w-full py-2 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
-          style={{ backgroundColor: theme.surface, color: theme.textMuted }}
-        >
-          <Lock size={14} /> Pro Feature
-        </button>
+        <div className="text-center p-3 rounded-xl" style={{ backgroundColor: theme.surface }}>
+          <Lock size={20} className="mx-auto mb-2" style={{ color: theme.accent }} />
+          <p className="text-sm font-medium mb-2" style={{ color: theme.text }}>Pro plan required</p>
+          <button 
+            onClick={(e) => {
+              e.stopPropagation();
+              onUpgradeClick();
+            }}
+            className="px-4 py-1.5 rounded-lg text-sm font-medium transition-all hover:opacity-80"
+            style={{ backgroundColor: theme.accent, color: 'white' }}
+          >
+            Upgrade to Pro
+          </button>
+        </div>
       ) : (
         <button
           onClick={activePlan ? onView : onStart}
@@ -268,7 +277,7 @@ const PlanCard: React.FC<{
             color: activePlan ? theme.accent : 'white'
           }}
         >
-          {activePlan ? 'Continue →' : 'Start'}
+          {activePlan ? 'Continue →' : 'Start Plan'}
         </button>
       )}
     </div>
@@ -283,13 +292,13 @@ const PlanDetailView: React.FC<{
   onMarkDayComplete: (day: number) => void;
   isPro: boolean;
   theme: any;
-}> = ({ plan, activePlan, onBack, onMarkDayComplete, isPro, theme }) => {
+  onUpgradeClick: () => void;
+}> = ({ plan, activePlan, onBack, onMarkDayComplete, isPro, theme, onUpgradeClick }) => {
   const [selectedDay, setSelectedDay] = useState(activePlan?.currentDay || 1);
   const todayReading = plan.readings.find((r: any) => r.day === selectedDay);
   const isTodayCompleted = activePlan?.completedDays.includes(selectedDay);
   const isLocked = plan.isPro && !isPro;
   
-  // Fetch today's reading content
   const { verses, isLoading, error, isOffline } = useBibleChapter(
     todayReading?.book || 'John',
     todayReading?.chapter || 1,
@@ -307,8 +316,8 @@ const PlanDetailView: React.FC<{
           This reading plan is only available for Logos Pro subscribers.
         </p>
         <button
-          onClick={() => window.location.href = '/subscription'}
-          className="px-6 py-3 rounded-xl font-semibold"
+          onClick={onUpgradeClick}
+          className="px-6 py-3 rounded-xl font-semibold transition-all hover:opacity-80"
           style={{ backgroundColor: theme.accent, color: 'white' }}
         >
           Upgrade to Pro
@@ -317,9 +326,9 @@ const PlanDetailView: React.FC<{
     );
   }
   
+  // Rest of PlanDetailView remains the same...
   return (
     <div className="space-y-4">
-      {/* Header */}
       <button
         onClick={onBack}
         className="flex items-center gap-2 text-sm mb-4"
@@ -328,7 +337,6 @@ const PlanDetailView: React.FC<{
         <ArrowLeft size={16} /> Back to Plans
       </button>
       
-      {/* Plan Header */}
       <div className="rounded-2xl p-4 text-center" style={{ backgroundColor: theme.surface }}>
         <div className="flex items-center justify-center gap-2 mb-2">
           <Target size={16} style={{ color: theme.accent }} />
@@ -345,7 +353,6 @@ const PlanDetailView: React.FC<{
         </p>
       </div>
       
-      {/* Day Selector */}
       <div className="rounded-2xl p-4" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
         <h3 className="font-bold text-sm mb-3" style={{ color: theme.text }}>Select Day</h3>
         <div className="grid grid-cols-7 gap-1 max-h-48 overflow-y-auto">
@@ -357,9 +364,7 @@ const PlanDetailView: React.FC<{
               <button
                 key={day}
                 onClick={() => setSelectedDay(day)}
-                className={`aspect-square flex items-center justify-center rounded-lg text-xs font-medium transition-all ${
-                  isCompleted ? 'bg-green-500' : isCurrent ? 'bg-amber-600' : ''
-                }`}
+                className="aspect-square flex items-center justify-center rounded-lg text-xs font-medium transition-all"
                 style={{
                   backgroundColor: isCompleted ? '#4CAF50' : isCurrent ? theme.accent : theme.surface,
                   color: (isCompleted || isCurrent) ? 'white' : theme.text,
@@ -373,7 +378,6 @@ const PlanDetailView: React.FC<{
         </div>
       </div>
       
-      {/* Today's Reading Content */}
       <div className="rounded-2xl p-4" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
         <div className="flex items-center justify-between mb-3">
           <div>
@@ -409,7 +413,7 @@ const PlanDetailView: React.FC<{
         {!isTodayCompleted && selectedDay === (activePlan?.currentDay || 1) && activePlan && (
           <button
             onClick={() => onMarkDayComplete(selectedDay)}
-            className="w-full mt-4 py-3 rounded-xl font-semibold text-sm"
+            className="w-full mt-4 py-3 rounded-xl font-semibold text-sm transition-all hover:opacity-80"
             style={{ backgroundColor: theme.accent, color: 'white' }}
           >
             Mark Day {selectedDay} Complete ✓
@@ -432,15 +436,19 @@ const ReadingPlansScreen: React.FC = () => {
   const { readerSettings, navigate, isPro, activePlans, markDayComplete, enrollPlan } = useAppStore();
   const theme = getTheme(readerSettings.theme);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
+  const [showProModal, setShowProModal] = useState(false);
   
   const selectedPlan = selectedPlanId ? READING_PLANS_DATA.find(p => p.id === selectedPlanId) : null;
   const activePlan = selectedPlanId ? activePlans.find(p => p.planId === selectedPlanId) : null;
   
+  const handleUpgradeClick = () => {
+    setShowProModal(true);
+  };
+  
   const handleStartPlan = (planId: string) => {
     const plan = READING_PLANS_DATA.find(p => p.id === planId);
     if (plan?.isPro && !isPro) {
-      // Show upgrade prompt
-      alert('This is a Pro plan. Please upgrade to Logos Pro to access this plan.');
+      setShowProModal(true);
       return;
     }
     enrollPlan(planId);
@@ -453,13 +461,11 @@ const ReadingPlansScreen: React.FC = () => {
     }
   };
   
-  // Separate plans into free and pro
   const freePlans = READING_PLANS_DATA.filter(p => !p.isPro);
   const proPlans = READING_PLANS_DATA.filter(p => p.isPro);
   
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: theme.bg }}>
-      {/* Header */}
       <div className="px-5 pt-6 pb-3 flex-shrink-0" style={{ borderBottom: `1px solid ${theme.border}` }}>
         <div className="flex items-center gap-3">
           <button onClick={() => selectedPlanId ? setSelectedPlanId(null) : navigate('home')} style={{ color: theme.textMuted }}>
@@ -474,7 +480,6 @@ const ReadingPlansScreen: React.FC = () => {
       <div className="flex-1 overflow-y-auto px-5 py-4">
         {!selectedPlanId ? (
           <>
-            {/* Active Plans Section */}
             {activePlans.length > 0 && (
               <div className="mb-6">
                 <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.textMuted }}>
@@ -493,6 +498,7 @@ const ReadingPlansScreen: React.FC = () => {
                         onView={() => setSelectedPlanId(active.planId)}
                         isPro={isPro}
                         theme={theme}
+                        onUpgradeClick={handleUpgradeClick}
                       />
                     );
                   })}
@@ -500,7 +506,6 @@ const ReadingPlansScreen: React.FC = () => {
               </div>
             )}
             
-            {/* Free Plans Section */}
             <div className="mb-6">
               <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.textMuted }}>
                 ✦ Free Plans
@@ -514,12 +519,12 @@ const ReadingPlansScreen: React.FC = () => {
                     onView={() => {}}
                     isPro={isPro}
                     theme={theme}
+                    onUpgradeClick={handleUpgradeClick}
                   />
                 ))}
               </div>
             </div>
             
-            {/* Pro Plans Section - Only shown if not Pro, otherwise show with active plans */}
             <div>
               <h2 className="text-xs font-bold uppercase tracking-widest mb-3 flex items-center gap-2" style={{ color: theme.textMuted }}>
                 <Crown size={12} style={{ color: theme.accent }} />
@@ -534,14 +539,14 @@ const ReadingPlansScreen: React.FC = () => {
                     onView={() => {}}
                     isPro={isPro}
                     theme={theme}
+                    onUpgradeClick={handleUpgradeClick}
                   />
                 ))}
               </div>
             </div>
             
-            {/* Pro Upsell - Only show if not Pro */}
             {!isPro && (
-              <div className="mt-6 rounded-2xl p-4" style={{ background: `linear-gradient(135deg, ${theme.accent}22, ${theme.accent}08)`, border: `1px solid ${theme.accent}33` }}>
+              <div className="mt-6 rounded-2xl p-4 cursor-pointer" style={{ background: `linear-gradient(135deg, ${theme.accent}22, ${theme.accent}08)`, border: `1px solid ${theme.accent}33` }}>
                 <div className="flex items-center gap-3">
                   <Crown size={24} style={{ color: theme.accent }} />
                   <div className="flex-1">
@@ -549,8 +554,8 @@ const ReadingPlansScreen: React.FC = () => {
                     <p className="text-xs" style={{ color: theme.textMuted }}>Get access to 50+ reading plans with Logos Pro</p>
                   </div>
                   <button
-                    onClick={() => navigate('subscription')}
-                    className="px-3 py-1.5 rounded-lg text-xs font-bold"
+                    onClick={handleUpgradeClick}
+                    className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-80"
                     style={{ backgroundColor: theme.accent, color: 'white' }}
                   >
                     Upgrade
@@ -567,10 +572,25 @@ const ReadingPlansScreen: React.FC = () => {
             onMarkDayComplete={handleMarkDayComplete}
             isPro={isPro}
             theme={theme}
+            onUpgradeClick={handleUpgradeClick}
           />
         )}
         <div className="h-20" />
       </div>
+      
+      {/* Pro Upgrade Modal */}
+      <ProUpgradeModal
+        isOpen={showProModal}
+        onClose={() => setShowProModal(false)}
+        userEmail={useAppStore.getState().currentUser?.email || ''}
+        userId={useAppStore.getState().currentUser?.uid || ''}
+        onSuccess={() => {
+          setShowProModal(false);
+          // Refresh the page to update pro status
+          window.location.reload();
+        }}
+        themeMode={readerSettings.theme}
+      />
     </div>
   );
 };

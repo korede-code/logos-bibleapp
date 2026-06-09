@@ -5,73 +5,99 @@ import { getTheme } from '../utils/themeUtils';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 const PaymentCallback: React.FC = () => {
-  const { readerSettings, setProStatus, navigate } = useAppStore();
+  const { readerSettings, setProStatus, setCurrentUser, currentUser } = useAppStore();
   const theme = getTheme(readerSettings.theme);
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Verifying your payment...');
 
   useEffect(() => {
     const verifyPayment = async () => {
-      // Get reference from URL
       const urlParams = new URLSearchParams(window.location.search);
       const reference = urlParams.get('reference');
+      const transactionRef = urlParams.get('trxref');
       
-      if (!reference) {
+      const paymentRef = reference || transactionRef;
+      
+      if (!paymentRef) {
         setStatus('error');
         setMessage('No payment reference found');
-        setTimeout(() => navigate('settings'), 3000);
+        setTimeout(() => {
+          window.location.href = '/settings';
+        }, 3000);
         return;
       }
       
       try {
         const API_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
-        const response = await fetch(`${API_URL}/payments/verify/${reference}`);
+        const response = await fetch(`${API_URL}/payments/verify/${paymentRef}`);
         const data = await response.json();
         
-        if (data.verified) {
-          // Update pro status in your backend
-          const userId = localStorage.getItem('userId') || 'user_' + Date.now();
+        console.log('Payment verification response:', data);
+        
+        // In PaymentCallback.tsx, update the user ID retrieval
+        if (data.verified === true || data.success === true) {
+          // Get user ID from multiple sources
+          let userId = localStorage.getItem('pendingProUserId');
           
-          const updateResponse = await fetch(`${API_URL}/users/set-pro-status`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              uid: userId,
-              isPro: true,
-              planId: data.data?.planId || 'monthly',
-              expiryDate: data.data?.expiryDate,
-            }),
-          });
-          
-          if (updateResponse.ok) {
-            setProStatus(true);
-            setStatus('success');
-            setMessage('Payment successful! You are now a Pro member.');
-            
-            // Clear stored data
-            localStorage.removeItem('paystack_reference');
-            
-            setTimeout(() => navigate('settings'), 2000);
-          } else {
-            throw new Error('Failed to update pro status');
+          if (!userId) {
+            const savedUser = localStorage.getItem('logos_user');
+            if (savedUser) {
+              try {
+                const user = JSON.parse(savedUser);
+                userId = user.uid;
+                console.log('Found user ID from logos_user:', userId);
+              } catch (e) {
+                console.error('Error parsing saved user:', e);
+              }
+            }
           }
+          
+          // Get current user from store
+          const storeUser = useAppStore.getState().currentUser;
+          if (!userId && storeUser?.uid) {
+            userId = storeUser.uid;
+            console.log('Found user ID from store:', userId);
+          }
+          
+          console.log('Final User ID for pro status:', userId);
+          
+          // Save pro status
+          if (userId) {
+            localStorage.setItem(`isPro_${userId}`, 'true');
+            console.log(`✅ Pro status saved for user: ${userId}`);
+          } else {
+            console.warn('⚠️ No user ID found, cannot save pro status');
+          }
+          
+          // Also save a global flag
+          localStorage.setItem('isPro', 'true');
+          
+          // Update store
+          setProStatus(true);
+          
+          setStatus('success');
+          setMessage('Payment successful! You are now a Pro member.');
+          
+          // Clear pending data
+          localStorage.removeItem('pendingProUserId');
+          localStorage.removeItem('pendingProPlan');
+          
+          setTimeout(() => {
+            window.location.href = '/settings';
+          }, 2000);
         } else {
           setStatus('error');
           setMessage('Payment verification failed. Please contact support.');
-          setTimeout(() => navigate('settings'), 3000);
         }
       } catch (error) {
-        console.error('Verification error:', error);
+        console.error('Payment verification error:', error);
         setStatus('error');
-        setMessage('An error occurred during verification.');
-        setTimeout(() => navigate('settings'), 3000);
+        setMessage('An error occurred while verifying your payment. Please try again.');
       }
     };
     
     verifyPayment();
-  }, [navigate, setProStatus]);
+  }, [setProStatus, setCurrentUser, currentUser]);
   
   return (
     <div className="flex items-center justify-center h-screen" style={{ backgroundColor: theme.bg }}>
@@ -97,7 +123,7 @@ const PaymentCallback: React.FC = () => {
             <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Payment Verification Failed</h2>
             <p style={{ color: theme.textMuted }}>{message}</p>
             <button
-              onClick={() => navigate('settings')}
+              onClick={() => window.location.href = '/settings'}
               className="mt-6 px-6 py-2 rounded-xl font-semibold"
               style={{ backgroundColor: theme.accent, color: 'white' }}
             >

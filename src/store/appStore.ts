@@ -13,7 +13,7 @@
 import { create } from 'zustand';
 import { DAILY_VERSES } from '../data/bibleData';
 import { bibleApi } from '../services/bibleApiClient';
-import { User } from 'firebase/auth';
+// Removed unused import: User from 'firebase/auth'
 
 // ─── Type Definitions ─────────────────────────────────────────────────────────
 
@@ -155,6 +155,16 @@ export interface TranslationOption {
   requiresPro: boolean;
 }
 
+// CORS allowed origins for the backend
+export const ALLOWED_ORIGINS = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'https://logos-daily.web.app',
+  'https://logos-daily.firebaseapp.com',
+  'https://logos-daily-backend.onrender.com',
+  'https://app.logosdaily.com', // Custom domain
+];
+
 export interface AppState {
   // Navigation
   currentScreen: AppScreen;
@@ -253,10 +263,10 @@ export interface AppState {
   recordReadingSession: (session: Omit<ReadingSession, 'date'>) => void;
 
   // Actions — Auth & Subscription
-  setProStatus: (status: boolean) => void;
+  //setProStatus: (status: boolean) => void;
   setCurrentUser: (user: any | null) => void;
   setUserData: (data: any) => void;
-  logout: () => void;
+  //logout: () => void;
 
   // Actions — UI
   selectVerse: (verseKey: string) => void;
@@ -302,13 +312,34 @@ const loadPersistedState = () => {
 
 const persisted = loadPersistedState();
 
+
+const restoreProStatus = () => {
+  try {
+    const savedUser = localStorage.getItem('logos_user');
+    if (savedUser) {
+      const user = JSON.parse(savedUser);
+      const userProStatus = localStorage.getItem(`isPro_${user.uid}`);
+      if (userProStatus !== null) {
+        return JSON.parse(userProStatus);
+      }
+    }
+    const globalPro = localStorage.getItem('logos_daily_pro');
+    if (globalPro !== null) {
+      return JSON.parse(globalPro);
+    }
+  } catch (e) {
+    console.error('Failed to restore Pro status:', e);
+  }
+  return false;
+};
+
 // ─── Store Implementation ─────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
   // Initial State
   currentScreen: 'home',
   previousScreen: null,
-  
+  isPro: restoreProStatus(),
   currentUser: null,
   userData: null,
 
@@ -319,6 +350,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     verse: 1,
     timestamp: Date.now(),
     translation: 'KJV',
+  },
+
+  setProStatus: (status) => {
+    set({ isPro: status });
+    const user = get().currentUser;
+    if (user?.uid) {
+      localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(status));
+    }
+    localStorage.setItem('logos_daily_pro', JSON.stringify(status));
+  },
+
+  logout: () => {
+    const user = get().currentUser;
+    if (user?.uid) {
+      localStorage.removeItem(`isPro_${user.uid}`);
+      localStorage.removeItem(`pro_data_${user.uid}`);
+    }
+    localStorage.removeItem('logos_daily_pro');
+    localStorage.removeItem('logos-daily-user');
+    set({ currentUser: null, userData: null, isPro: false });
   },
 
   readerSettings: persisted?.readerSettings ?? {
@@ -460,7 +511,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchHistory: ['love', 'faith', 'grace', 'peace'],
   lastSearchQuery: '',
   
-  isPro: false,
   lastSyncAt: Date.now() - 3600000 * 2,
   pendingSyncCount: 3,
   selectedVerses: [],
@@ -496,11 +546,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCurrentUser: (user) => set({ currentUser: user }),
   
   setUserData: (data) => set({ userData: data }),
-  
-  logout: () => {
-    set({ currentUser: null, userData: null, isPro: false });
-    localStorage.removeItem('logos-daily-user');
-  },
 
   setReadingPosition: (pos) => {
     const updated = { ...get().readingPosition, ...pos, timestamp: Date.now() };
@@ -678,9 +723,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  // ===== AUTH & SUBSCRIPTION ACTIONS =====
-  
-  setProStatus: (status) => set({ isPro: status }),
+  // ===== AUTH & SUBSCRIPTION ACTIONS ====
 
   // ===== UI ACTIONS =====
 
