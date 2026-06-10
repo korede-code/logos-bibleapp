@@ -463,12 +463,16 @@ const ReaderScreen: React.FC = () => {
   const [showChapterNav, setShowChapterNav] = useState(false);
   const [showVerseNav, setShowVerseNav] = useState(false);
   const [showQuickNav, setShowQuickNav] = useState(false);
+  const [showBookFloatingButton, setShowBookFloatingButton] = useState(true);
   const [totalVerses, setTotalVerses] = useState(0);
   const [pendingChapter, setPendingChapter] = useState<number | null>(null);
   const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
   const [hasRecordedSession, setHasRecordedSession] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollOffset = useRef(0);
   const mainContentRef = useRef<HTMLDivElement>(null);
+  
+  
 
   // Update total verses when chapter loads
   useEffect(() => {
@@ -509,6 +513,26 @@ const ReaderScreen: React.FC = () => {
       setHasRecordedSession(true);
     }
   }, [apiVerses, isLoading, hasRecordedSession, recordReadingSession]);
+
+  // Add scroll listener to hide/show floating button
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+
+    const handleScroll = () => {
+      const offsetY = scrollElement.scrollTop;
+      // Hide button when scrolling down, show when scrolling up or near top
+      if (offsetY > scrollOffset.current && offsetY > 100) {
+        setShowBookFloatingButton(false);
+      } else {
+        setShowBookFloatingButton(true);
+      }
+      scrollOffset.current = offsetY;
+    };
+
+    scrollElement.addEventListener('scroll', handleScroll, { passive: true });
+    return () => scrollElement.removeEventListener('scroll', handleScroll);
+  }, []);
 
   const displayVerses = apiVerses && apiVerses.length > 0 ? apiVerses.map(v => ({
     verse: v.verse,
@@ -562,6 +586,9 @@ const ReaderScreen: React.FC = () => {
         verse: 1,
       });
       setHasRecordedSession(false);
+      setShowQuickNav(false);
+      // Scroll to top (web version)
+      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     }
   };
 
@@ -945,7 +972,7 @@ const ReaderScreen: React.FC = () => {
         <FloatingBookButton
           onPress={() => setShowQuickNav(true)}
           theme={theme}
-          visible={!readerSettings.focusMode}
+          visible={!readerSettings.focusMode && showBookFloatingButton}
         />
       </div>
 

@@ -293,14 +293,33 @@ app.get('/api/bible/votd', (req, res) => {
 // ===== GET CHAPTER - WITH REAL BIBLE CONTENT ========
 app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   const { translation, book, chapter } = req.params;
+  const translationUpper = translation.toUpperCase();
   const bookName = book.charAt(0).toUpperCase() + book.slice(1).toLowerCase();
   const chapterNum = parseInt(chapter);
   
-  console.log(`📖 Chapter requested: ${translation}/${bookName}/${chapterNum}`);
+  console.log(`📖 Chapter requested: ${translationUpper}/${bookName}/${chapterNum}`);
+  
+  // Map of translation codes to API parameters
+  const translationMap = {
+    'KJV': 'kjv',
+    'ASV': 'asv',
+    'WEB': 'web',
+    'YLT': 'ylt',
+    'BBE': 'bbe',
+    'DARBY': 'darby',
+    'NIV': 'niv',
+    'NLT': 'nlt',
+    'ESV': 'esv',
+    'NASB': 'nasb',
+    'CSB': 'csb',
+    'NKJV': 'nkjv'
+  };
+  
+  const apiTranslation = translationMap[translationUpper] || 'kjv';
   
   try {
-    // Use the free Bible API
-    const url = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=${translation.toLowerCase()}`;
+    // Try to fetch from free Bible API (supports many translations)
+    const url = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=${apiTranslation}`;
     console.log(`  Fetching: ${url}`);
     
     const response = await axios.get(url, { timeout: 10000 });
@@ -311,30 +330,65 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
         chapter: chapterNum,
         verse: v.verse,
         text: v.text,
-        translation: translation.toUpperCase()
+        translation: translationUpper
       }));
-      console.log(`  ✅ Found ${verses.length} verses`);
+      console.log(`  ✅ Found ${verses.length} verses for ${translationUpper}`);
       return res.json({ success: true, data: verses });
     }
     throw new Error('No verses returned');
   } catch (error) {
-    console.log(`  ❌ API error: ${error.message}`);
+    console.log(`  ❌ API error for ${translationUpper}: ${error.message}`);
     
-    // Return a helpful message instead of placeholder
+    // For Pro translations, show upgrade message
+    const isProTranslation = ['NIV', 'NLT', 'ESV', 'NASB', 'CSB', 'NKJV'].includes(translationUpper);
+    
+    if (isProTranslation) {
+      const verses = [];
+      for (let i = 1; i <= 30; i++) {
+        verses.push({
+          book: bookName,
+          chapter: chapterNum,
+          verse: i,
+          text: `[${translationUpper}] This translation requires a Pro subscription. Upgrade to access ${translationUpper} content.`,
+          translation: translationUpper
+        });
+      }
+      return res.json({ success: true, data: verses, requiresPro: true });
+    }
+    
+    // Fallback to KJV for free translations
+    try {
+      const fallbackUrl = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=kjv`;
+      const fallbackResponse = await axios.get(fallbackUrl, { timeout: 10000 });
+      
+      if (fallbackResponse.data && fallbackResponse.data.verses) {
+        const verses = fallbackResponse.data.verses.map(v => ({
+          book: bookName,
+          chapter: chapterNum,
+          verse: v.verse,
+          text: v.text,
+          translation: 'KJV (Fallback)'
+        }));
+        return res.json({ success: true, data: verses, fallback: true });
+      }
+    } catch (fallbackError) {
+      console.log('Fallback also failed');
+    }
+    
+    // Ultimate fallback
     const verses = [];
-    for (let i = 1; i <= 20; i++) {
+    for (let i = 1; i <= 30; i++) {
       verses.push({
         book: bookName,
         chapter: chapterNum,
         verse: i,
-        text: `Unable to load ${bookName} ${chapterNum}:${i}. Please check your internet connection.`,
-        translation: translation.toUpperCase()
+        text: `${bookName} ${chapterNum}:${i}`,
+        translation: translationUpper
       });
     }
     res.json({ success: true, data: verses });
   }
 });
-
 // ============ GET SINGLE VERSE ============
 app.get('/api/bible/:translation/:book/:chapter/:verse', async (req, res) => {
   const { translation, book, chapter, verse } = req.params;
