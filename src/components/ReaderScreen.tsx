@@ -9,6 +9,7 @@
  * - Chapter navigation
  * - Verse navigation
  * - Red letter text support
+ * - Quick book navigation (floating button + modal)
  */
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
@@ -16,7 +17,7 @@ import {
   ChevronLeft, ChevronRight, Settings2, Bookmark,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, MessageSquare,
-  WifiOff, RefreshCw
+  WifiOff, RefreshCw, Search
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { useBibleChapter } from '../hooks/useRealBibleData';
@@ -40,6 +41,162 @@ const isRedLetterVerse = (book: string, chapter: number, verse: number): boolean
   };
   const key = `${book}:${chapter}`;
   return redLetterMap[key]?.includes(verse) ?? false;
+};
+
+// All books list for quick navigation
+const ALL_BOOKS = [
+  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+  'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings',
+  '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job',
+  'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah',
+  'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+  'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai',
+  'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts',
+  'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
+  'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
+  '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James',
+  '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
+];
+
+// ─── Floating Book Button Component ─────────────────────────────────────────
+
+const FloatingBookButton: React.FC<{ 
+  onPress: () => void; 
+  theme: any; 
+  visible: boolean 
+}> = ({ onPress, theme, visible }) => {
+  if (!visible) return null;
+
+  return (
+    <div
+      className="fixed bottom-24 right-5 z-50 transition-all duration-300"
+      style={{
+        transform: visible ? 'scale(1)' : 'scale(0)',
+        opacity: visible ? 1 : 0,
+      }}
+    >
+      <button
+        onClick={onPress}
+        className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95"
+        style={{
+          backgroundColor: theme.accent,
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+        }}
+        aria-label="Quick book navigation"
+      >
+        <span className="text-2xl">📖</span>
+      </button>
+    </div>
+  );
+};
+
+// ─── Quick Book Navigator Modal ──────────────────────────────────────────────
+
+const BookQuickNavigator: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  onSelectBook: (book: string) => void;
+  currentBook: string;
+  theme: any;
+}> = ({ visible, onClose, onSelectBook, currentBook, theme }) => {
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const filteredBooks = ALL_BOOKS.filter(book =>
+    book.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  if (!visible) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-[60] flex items-end justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-3xl flex flex-col"
+        style={{ 
+          backgroundColor: theme.card, 
+          maxHeight: '80vh',
+          animation: 'slideUp 0.3s ease-out'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="p-5 border-b" style={{ borderColor: theme.border }}>
+          <h2 className="text-lg font-bold text-center" style={{ color: theme.text }}>
+            Quick Navigation
+          </h2>
+          <p className="text-xs text-center mt-1" style={{ color: theme.textMuted }}>
+            Jump to any book
+          </p>
+        </div>
+
+        {/* Search Input */}
+        <div className="p-4">
+          <div
+            className="flex items-center gap-2 px-4 py-3 rounded-xl"
+            style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
+          >
+            <Search size={16} style={{ color: theme.textMuted }} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search for a book..."
+              className="flex-1 bg-transparent outline-none text-sm"
+              style={{ color: theme.text }}
+              autoFocus
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} style={{ color: theme.textMuted }}>
+                <X size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Books List */}
+        <div className="flex-1 overflow-y-auto px-4 pb-4">
+          <div className="flex flex-wrap gap-2">
+            {filteredBooks.map(book => (
+              <button
+                key={book}
+                onClick={() => {
+                  onSelectBook(book);
+                  onClose();
+                }}
+                className="px-4 py-2.5 rounded-full text-sm font-medium transition-all hover:opacity-80"
+                style={{
+                  backgroundColor: book === currentBook ? theme.accent : theme.surface,
+                  color: book === currentBook ? 'white' : theme.text,
+                  border: `1px solid ${book === currentBook ? theme.accent : theme.border}`,
+                }}
+              >
+                {book}
+              </button>
+            ))}
+            {filteredBooks.length === 0 && (
+              <p className="text-sm text-center w-full py-8" style={{ color: theme.textMuted }}>
+                No books found
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Close Button */}
+        <div className="p-4 border-t" style={{ borderColor: theme.border }}>
+          <button
+            onClick={onClose}
+            className="w-full py-3 rounded-xl text-sm font-medium transition-all hover:opacity-80"
+            style={{ backgroundColor: theme.surface, color: theme.textMuted, border: `1px solid ${theme.border}` }}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // ─── Chapter Navigator Component ─────────────────────────────────────────────
@@ -76,11 +233,7 @@ const ChapterNavigator: React.FC<{
                   onChapterChange(ch);
                   onClose();
                 }}
-                className={`py-2 rounded-lg text-sm font-medium transition-all ${
-                  ch === currentChapter 
-                    ? 'bg-amber-600 text-white' 
-                    : 'hover:opacity-80'
-                }`}
+                className="py-2 rounded-lg text-sm font-medium transition-all"
                 style={{
                   backgroundColor: ch === currentChapter ? theme.accent : theme.surface,
                   color: ch === currentChapter ? 'white' : theme.text,
@@ -107,7 +260,6 @@ const VerseNavigator: React.FC<{
   onClose: () => void;
   theme: any;
 }> = ({ currentChapter, totalVerses, currentVerse, onVerseChange, onClose, theme }) => {
-  // Show loading if verses not yet available
   if (totalVerses === 0) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
@@ -119,7 +271,6 @@ const VerseNavigator: React.FC<{
     );
   }
 
-  // Group verses into rows of 10
   const verseGroups = Array.from({ length: Math.ceil(totalVerses / 10) }, (_, i) => {
     const start = i * 10 + 1;
     const end = Math.min(start + 9, totalVerses);
@@ -148,9 +299,7 @@ const VerseNavigator: React.FC<{
                       onVerseChange(verse);
                       onClose();
                     }}
-                    className={`w-10 h-10 rounded-lg text-sm font-medium transition-all ${
-                      verse === currentVerse ? 'bg-amber-600 text-white' : 'hover:opacity-80'
-                    }`}
+                    className="w-10 h-10 rounded-lg text-sm font-medium transition-all"
                     style={{
                       backgroundColor: verse === currentVerse ? theme.accent : theme.surface,
                       color: verse === currentVerse ? 'white' : theme.text,
@@ -210,26 +359,12 @@ const VerseText: React.FC<VerseTextProps> = ({
   const refKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
   const verseRefs = crossRefs;
 
-  // In VerseText component, right before the return statement:
-  console.log('🎨 VerseText render:', {
-    verse: verse.verse,
-    bookId: verse.bookId,
-    chapter: verse.chapter,
-    highlights: highlights.filter(h => 
-      h.bookId === verse.bookId && 
-      h.chapter === verse.chapter && 
-      h.verse === verse.verse
-    ),
-    highlightColor: highlightColor,
-  });
-
   return (
     <div
       id={`verse-${verse.verse}`}
       className="group mb-4 relative"
       style={{ lineHeight: lineSpacing }}
     >
-      {/* Verse number */}
       {showVerseNumbers && (
         <span
           className="inline-block mr-3 font-bold select-none cursor-pointer hover:opacity-70"
@@ -248,7 +383,6 @@ const VerseText: React.FC<VerseTextProps> = ({
         </span>
       )}
       
-      {/* Verse text */}
       <span
         role="button"
         tabIndex={0}
@@ -309,7 +443,6 @@ const ReaderScreen: React.FC = () => {
     addBookmark, bookmarks, recordReadingSession
   } = useAppStore();
 
-  // API hook to fetch chapter data
   const { 
     verses: apiVerses, 
     isLoading, 
@@ -329,6 +462,7 @@ const ReaderScreen: React.FC = () => {
   const [showBookNav, setShowBookNav] = useState(false);
   const [showChapterNav, setShowChapterNav] = useState(false);
   const [showVerseNav, setShowVerseNav] = useState(false);
+  const [showQuickNav, setShowQuickNav] = useState(false);
   const [totalVerses, setTotalVerses] = useState(0);
   const [pendingChapter, setPendingChapter] = useState<number | null>(null);
   const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
@@ -346,16 +480,13 @@ const ReaderScreen: React.FC = () => {
     }
   }, [apiVerses, pendingChapter]);
 
-  // In ReaderScreen.tsx, add this useEffect
   // Scroll to the current verse when the chapter loads
   useEffect(() => {
     if (apiVerses && apiVerses.length > 0 && readingPosition.verse > 1) {
-      // Small delay to ensure verses are rendered
       const timer = setTimeout(() => {
         const verseElement = document.getElementById(`verse-${readingPosition.verse}`);
         if (verseElement) {
           verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Optional: highlight the verse briefly
           verseElement.style.transition = 'background-color 2s';
           verseElement.style.backgroundColor = `${theme.accent}33`;
           setTimeout(() => {
@@ -379,7 +510,6 @@ const ReaderScreen: React.FC = () => {
     }
   }, [apiVerses, isLoading, hasRecordedSession, recordReadingSession]);
 
-  // Convert API verses to the format expected by VerseText component
   const displayVerses = apiVerses && apiVerses.length > 0 ? apiVerses.map(v => ({
     verse: v.verse,
     text: v.text,
@@ -395,15 +525,13 @@ const ReaderScreen: React.FC = () => {
     b.bookId === readingPosition.bookId && b.chapter === readingPosition.chapter
   );
 
-  // Handle chapter selection: update chapter then open verse selector
   const handleChapterSelect = (chapter: number) => {
     setShowChapterNav(false);
     setReadingPosition({ chapter, verse: 1 });
     setPendingChapter(chapter);
-    setShowVerseNav(true); // Open verse selector immediately
+    setShowVerseNav(true);
   };
 
-  // Navigation functions
   const goToChapter = useCallback((chapter: number) => {
     if (chapter >= 1 && chapter <= totalChapters) {
       setReadingPosition({ chapter, verse: 1 });
@@ -412,7 +540,6 @@ const ReaderScreen: React.FC = () => {
     }
   }, [totalChapters, setReadingPosition]);
 
-  // Handle verse selection: scroll to that verse
   const goToVerse = useCallback((verse: number) => {
     if (verse >= 1 && verse <= totalVerses) {
       setReadingPosition({ verse });
@@ -424,6 +551,19 @@ const ReaderScreen: React.FC = () => {
       }, 100);
     }
   }, [totalVerses, setReadingPosition]);
+
+  const handleQuickBookSelect = (book: string) => {
+    const bookData = BIBLE_BOOKS.find(b => b.name === book);
+    if (bookData) {
+      setReadingPosition({
+        book: bookData.name,
+        bookId: bookData.id,
+        chapter: 1,
+        verse: 1,
+      });
+      setHasRecordedSession(false);
+    }
+  };
 
   const handleCrossRefTap = (verseRef: string) => {
     const refs = CROSS_REFERENCES[verseRef] ?? [];
@@ -445,14 +585,12 @@ const ReaderScreen: React.FC = () => {
     }
   };
 
-  // Handle tap on main content to exit focus mode
   const handleContentTap = () => {
     if (readerSettings.focusMode) {
       updateReaderSettings({ focusMode: false });
     }
   };
 
-  // Parallel view: second translation
   const parallelVerses = displayVerses.map(v => ({
     ...v,
     text: v.text.replace(/\b(thee|thou|thy|ye|hath|doth|saith|goeth|spake|verily)\b/gi, (w) => {
@@ -527,7 +665,6 @@ const ReaderScreen: React.FC = () => {
             <ArrowLeft size={18} />
           </button>
 
-          {/* Book/Chapter Navigation */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowBookNav(true)}
@@ -630,11 +767,10 @@ const ReaderScreen: React.FC = () => {
       {/* Main Reading Area */}
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto"
+        className="flex-1 overflow-y-auto relative"
         style={{ backgroundColor: theme.bg, scrollbarColor: `${theme.scrollbar} transparent` }}
         role="article"
       >
-        {/* Click handler for focus mode - the entire content area is clickable */}
         <div
           ref={mainContentRef}
           onClick={handleContentTap}
@@ -648,7 +784,6 @@ const ReaderScreen: React.FC = () => {
               paddingRight: `${readerSettings.marginWidth + 20}px`,
             }}
           >
-            {/* Chapter Heading - hidden in focus mode */}
             {!readerSettings.focusMode && (
               <div className="mb-8 text-center">
                 <div
@@ -676,7 +811,6 @@ const ReaderScreen: React.FC = () => {
               </div>
             )}
 
-            {/* In Focus Mode - show a small indicator at the top */}
             {readerSettings.focusMode && (
               <div className="text-center mb-4 opacity-50">
                 <p className="text-xs" style={{ color: theme.textMuted }}>
@@ -685,7 +819,6 @@ const ReaderScreen: React.FC = () => {
               </div>
             )}
 
-            {/* Parallel View */}
             {isParallel ? (
               <div className="grid grid-cols-2 gap-6">
                 <div>
@@ -766,7 +899,6 @@ const ReaderScreen: React.FC = () => {
                 ))}
               </div>
             ) : (
-              /* Standard Scroll View */
               <div>
                 {displayVerses.map(verse => {
                   const verseRefKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
@@ -795,7 +927,6 @@ const ReaderScreen: React.FC = () => {
               </div>
             )}
 
-            {/* End of chapter indicator - hidden in focus mode */}
             {!readerSettings.focusMode && (
               <div className="mt-8 pt-4 text-center">
                 <div className="inline-flex items-center gap-2 text-xs" style={{ color: theme.textFaint }}>
@@ -809,9 +940,16 @@ const ReaderScreen: React.FC = () => {
             <div className="h-24" />
           </div>
         </div>
+
+        {/* Floating Book Button - for quick book navigation */}
+        <FloatingBookButton
+          onPress={() => setShowQuickNav(true)}
+          theme={theme}
+          visible={!readerSettings.focusMode}
+        />
       </div>
 
-      {/* Focus Mode Indicator - shows when in focus mode */}
+      {/* Focus Mode Indicator */}
       {readerSettings.focusMode && (
         <div 
           className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full text-xs font-medium transition-all duration-300"
@@ -890,6 +1028,17 @@ const ReaderScreen: React.FC = () => {
           currentVerse={readingPosition.verse}
           onVerseChange={goToVerse}
           onClose={() => setShowVerseNav(false)}
+          theme={theme}
+        />
+      )}
+
+      {/* Quick Book Navigator Modal */}
+      {showQuickNav && (
+        <BookQuickNavigator
+          visible={showQuickNav}
+          onClose={() => setShowQuickNav(false)}
+          onSelectBook={handleQuickBookSelect}
+          currentBook={readingPosition.book}
           theme={theme}
         />
       )}
