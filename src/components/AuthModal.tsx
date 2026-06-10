@@ -1,13 +1,13 @@
 // src/components/AuthModal.tsx
 import React, { useState } from 'react';
-import { X, Mail, Lock, User, Eye, EyeOff, CheckCircle, Globe } from 'lucide-react';
-import { 
-  signInWithGoogle, 
-  signUpWithEmail, 
-  signInWithEmail, 
-  resetPassword,
-  getUserData 
+import { X, Mail, Lock, Eye, EyeOff, CheckCircle, Globe } from 'lucide-react';
+import {
+  auth,
+  signUpWithEmail,
+  signInWithEmail,
 } from '../config/firebase';
+import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
 
@@ -33,49 +33,29 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
 
   if (!isOpen) return null;
 
-  // In AuthModal.tsx - update handleGoogleSignIn
-  // In AuthModal.tsx, update the sign-in handlers
-
   const handleGoogleSignIn = async () => {
-    setLoading(true);
-    setError('');
-    
     try {
-      const result = await signInWithGoogle();
-      console.log('AuthModal: Google sign in result', result);
+      // Check if running on native device
+      const isNative = (window as any).Capacitor?.isNativePlatform?.();
       
-      if (result.success && result.user) {
-        // Save user to localStorage
-        const userData = {
-          uid: result.user.uid,
-          email: result.user.email,
-          displayName: result.user.displayName,
-          photoURL: result.user.photoURL
-        };
-        localStorage.setItem('logos_user', JSON.stringify(userData));
-        console.log('User saved to localStorage:', userData);
+      if (isNative) {
+        // Use native Google Sign-In
+        const result = await GoogleAuth.signIn();
+        console.log('Google user:', result);
         
-        // Check if user has pro status
-        const userProStatus = localStorage.getItem(`isPro_${result.user.uid}`) === 'true';
-        
-        // Update store
-        if (onSuccess) {
-          onSuccess({
-            ...result.user,
-            isPro: userProStatus
-          });
-        }
-        
-        showToast(`Welcome ${result.user.displayName || result.user.email}!`, '#4CAF50');
-        onClose();
+        // Create Firebase credential from the Google token
+        const credential = GoogleAuthProvider.credential(result.authentication.idToken);
+        const userCredential = await signInWithCredential(auth, credential);
+        handleAuthSuccess(userCredential.user);
       } else {
-        setError(result.error || 'Google sign in failed');
+        // Use web popup (existing code)
+        const provider = new GoogleAuthProvider();
+        const result = await signInWithPopup(auth, provider);
+        handleAuthSuccess(result.user);
       }
-    } catch (err: any) {
-      console.error('AuthModal: Google sign in error', err);
-      setError(err.message || 'Google sign in failed');
-    } finally {
-      setLoading(false);
+    } catch (error) {
+      console.error('Sign in error:', error);
+      setError('Failed to sign in');
     }
   };
 
@@ -372,3 +352,17 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
 };
 
 export default AuthModal;
+
+function handleAuthSuccess(user: User) {
+  if (!user) return;
+
+  const userData = {
+    uid: user.uid,
+    email: user.email || '',
+    displayName: user.displayName || '',
+    photoURL: user.photoURL || '',
+  };
+
+  localStorage.setItem('logos_user', JSON.stringify(userData));
+  console.log('Google sign-in success', userData);
+}

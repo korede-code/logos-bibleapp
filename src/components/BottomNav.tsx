@@ -26,7 +26,7 @@ const NAV_ITEMS: Array<{
   {
     id: 'reader',
     icon: <BookOpen size={22} />,
-    label: 'Read',
+    label: 'Bible',
   },
   {
     id: 'search',

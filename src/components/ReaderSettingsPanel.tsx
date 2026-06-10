@@ -21,7 +21,7 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
   const [loadingTranslations, setLoadingTranslations] = useState(false);
   const [translationError, setTranslationError] = useState<string | null>(null);
 
-  // Local fallback translations in case API fails
+  // Local fallback translations (same as backend)
   const fallbackTranslations = [
     { code: 'KJV', name: 'King James Version', description: 'The classic 1611 English translation', publicDomain: true, requiresPro: false },
     { code: 'ASV', name: 'American Standard Version', description: 'Early 20th-century revision of the KJV', publicDomain: true, requiresPro: false },
@@ -31,6 +31,9 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
     { code: 'NIV', name: 'New International Version', description: 'Most popular modern translation', publicDomain: false, requiresPro: true },
     { code: 'NLT', name: 'New Living Translation', description: 'Easy to read modern translation', publicDomain: false, requiresPro: true },
     { code: 'ESV', name: 'English Standard Version', description: 'Essentially literal translation', publicDomain: false, requiresPro: true },
+    { code: 'NASB', name: 'New American Standard Bible', description: 'Highly literal modern translation', publicDomain: false, requiresPro: true },
+    { code: 'CSB', name: 'Christian Standard Bible', description: 'Optimal equivalence translation', publicDomain: false, requiresPro: true },
+    { code: 'NKJV', name: 'New King James Version', description: 'Modern update of the KJV', publicDomain: false, requiresPro: true },
   ];
 
   useEffect(() => {
@@ -42,33 +45,46 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
     setTranslationError(null);
     
     try {
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
-      const response = await fetch(`${apiUrl}/bible/translations`, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+      const apiUrl = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
+      const response = await fetch(`${apiUrl}/bible/translations`);
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
       
       const data = await response.json();
+      console.log('📚 Translations loaded:', data);
+      
       if (data.success && data.translations) {
         setTranslations(data.translations);
       } else {
-        // Use fallback translations
-        console.warn('Using fallback translations');
         setTranslations(fallbackTranslations);
       }
     } catch (error) {
       console.error('Failed to load translations:', error);
       setTranslationError('Could not load translations. Using defaults.');
-      // Use fallback translations
       setTranslations(fallbackTranslations);
     } finally {
       setLoadingTranslations(false);
     }
+  };
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const colors = {
+      success: '#4CAF50',
+      error: '#e53935',
+      info: '#f59e0b'
+    };
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: ${colors[type]}; color: white; padding: 10px 20px;
+      border-radius: 10px; z-index: 1000; font-size: 14px;
+      animation: fadeInUp 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
   };
 
   const themes = [
@@ -309,7 +325,7 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
             </div>
           </SettingSection>
 
-          {/* Bible Translation Section */}
+          {/* Bible Translation Section - FIXED */}
           <SettingSection title="Bible Translation">
             {loadingTranslations ? (
               <div className="flex justify-center py-4">
@@ -321,24 +337,25 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                 {translationError}
               </div>
             )}
+            
+            {/* Show current translation */}
+            <div className="mb-3 p-2 rounded-lg" style={{ backgroundColor: `${theme.accent}10` }}>
+              <p className="text-xs" style={{ color: theme.text }}>
+                Current: <span style={{ color: theme.accent, fontWeight: 'bold' }}>{readerSettings.translation}</span>
+              </p>
+            </div>
+            
             <div className="space-y-2 max-h-64 overflow-y-auto">
               {translations.map((t) => (
                 <button
                   key={t.code}
                   onClick={() => {
                     if (t.requiresPro && !isPro) {
-                      const toast = document.createElement('div');
-                      toast.textContent = 'This translation requires a Pro subscription. Upgrade to access.';
-                      toast.style.cssText = `
-                        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-                        background: #f59e0b; color: white; padding: 10px 20px;
-                        border-radius: 10px; z-index: 1000; font-size: 14px;
-                      `;
-                      document.body.appendChild(toast);
-                      setTimeout(() => toast.remove(), 3000);
+                      showToast('This translation requires a Pro subscription. Upgrade to access.', 'info');
                       return;
                     }
                     updateReaderSettings({ translation: t.code });
+                    showToast(`Switched to ${t.name}`, 'success');
                   }}
                   className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
                     readerSettings.translation === t.code ? 'ring-2' : ''

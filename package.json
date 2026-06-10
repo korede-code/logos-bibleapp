@@ -9,6 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.0",
+    "@capacitor/cli": "^8.4.0",
+    "@capacitor/core": "^8.4.0",
+    "@codetrix-studio/capacitor-google-auth": "^3.4.0-rc.4",
     "@paystack/inline-js": "^2.22.9",
     "axios": "^1.6.0",
     "date-fns": "^2.30.0",

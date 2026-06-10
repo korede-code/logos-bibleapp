@@ -1,0 +1,16 @@
+{
+  "appId": "com.logosdaily.app",
+  "appName": "Study Bible",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "GoogleAuth": {
+      "scopes": ["profile", "email"],
+      "serverClientId": "459530292088-bl21lfr875qni7ntqts9jogmjn1vllg3.apps.googleusercontent.com",
+      "forceCodeForRefreshToken": true
+    }
+  }
+}

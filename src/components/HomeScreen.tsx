@@ -193,7 +193,7 @@ const HomeScreen: React.FC = () => {
               <span className="font-medium">{greeting}</span>
             </div>
             <h1 className="text-2xl font-bold" style={{ color: theme.text, fontFamily: 'Crimson Pro, serif', letterSpacing: '-0.01em' }}>
-              Logos Daily
+              Study Bible
             </h1>
           </div>
           <div className="flex items-center gap-3">
