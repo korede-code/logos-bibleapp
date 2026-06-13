@@ -1,8 +1,6 @@
 // backend/config/firebase-admin.js
 const admin = require('firebase-admin');
 
-// Path to your service account key file
-// IMPORTANT: Add this file to .gitignore!
 const serviceAccount = require('./serviceAccountKey.json');
 
 // Initialize Firebase Admin

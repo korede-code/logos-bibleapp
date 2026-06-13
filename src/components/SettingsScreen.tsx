@@ -11,7 +11,14 @@ import ProUpgradeModal from './ProUpgradeModal';
 import PrivacyPolicyModal from './PrivacyPolicyModal';
 
 const SettingsScreen: React.FC = () => {
-  const { readerSettings, navigate, setCurrentUser } = useAppStore();
+  const { 
+    readerSettings, 
+    navigate, 
+    setCurrentUser,
+    isPro: storeIsPro,
+    setProStatus: updateStoreProStatus 
+  } = useAppStore();
+  
   const theme = getTheme(readerSettings.theme);
   
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -22,7 +29,8 @@ const SettingsScreen: React.FC = () => {
   const [loading, setLoading] = useState(true);
 
   const updateProStatus = (status: boolean, uid?: string) => {
-    useAppStore.setState({ isPro: status });
+    updateStoreProStatus(status);  // ✅ Use store function
+    setIsPro(status);
     const userId = uid ?? user?.uid;
     if (userId) {
       localStorage.setItem(`isPro_${userId}`, JSON.stringify(status));
@@ -42,7 +50,7 @@ const SettingsScreen: React.FC = () => {
       const data = await response.json();
       
       if (data.success && data.isPro) {
-        useAppStore.getState().setProStatus(true);
+        updateStoreProStatus(true);
         localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(true));
         localStorage.setItem('logos_daily_pro', JSON.stringify(true));
         showToast('✅ Pro status confirmed!', '#4CAF50');
@@ -58,43 +66,48 @@ const SettingsScreen: React.FC = () => {
   // In SettingsScreen.tsx, update the auth useEffect
 
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged(async (user) => {
-      setCurrentUser(user);
+    const unsubscribe = auth.onAuthStateChanged(async (firebaseUser) => {
+      setUser(firebaseUser);
       
-      if (user) {
+      if (firebaseUser) {
         // Save user to localStorage
         localStorage.setItem('logos_user', JSON.stringify({
-          uid: user.uid,
-          email: user.email,
-          displayName: user.displayName,
-          photoURL: user.photoURL,
+          uid: firebaseUser.uid,
+          email: firebaseUser.email,
+          displayName: firebaseUser.displayName,
+          photoURL: firebaseUser.photoURL,
         }));
+        
+        // Check localStorage first
+        const savedPro = localStorage.getItem(`isPro_${firebaseUser.uid}`) === 'true';
+        if (savedPro) {
+          setIsPro(true);
+          updateProStatus(true, firebaseUser.uid);
+        }
         
         // Force refresh token to get latest claims
         try {
-          const idTokenResult = await user.getIdTokenResult(true);
-          console.log('Token claims:', idTokenResult.claims);
-          
-          // Check if Pro status is in custom claims
+          const idTokenResult = await firebaseUser.getIdTokenResult(true);
           if (idTokenResult.claims.isPro) {
-            updateProStatus(true, user.uid);
+            updateProStatus(true, firebaseUser.uid);
           }
         } catch (e) {
           console.error('Token refresh error:', e);
         }
         
-        // Also check Firestore
+        // Check Firestore
         try {
-          const userData = await getUserData(user.uid);
-          console.log('Firestore user data:', userData);
-          
+          const userData = await getUserData(firebaseUser.uid);
           if (userData?.isPro) {
-            updateProStatus(true, user.uid);
+            updateProStatus(true, firebaseUser.uid);
           }
         } catch (e) {
           console.error('Firestore check error:', e);
         }
       }
+      
+      // ✅ FIX: Set loading to false after auth check completes
+      setLoading(false);
     });
     
     return () => unsubscribe();
@@ -112,6 +125,16 @@ const SettingsScreen: React.FC = () => {
     };
     checkProStatus();
   }, [user]);
+
+  // Add this useEffect to prevent infinite loading
+  useEffect(() => {
+    // Safety timeout: if auth doesn't resolve in 5 seconds, show the screen anyway
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 5000);
+    
+    return () => clearTimeout(timeout);
+  }, []);
 
   const handleSignOut = async () => {
     const result = await logoutUser();
