@@ -60,3 +60,6 @@ Desktop.ini
 *.temp
 .cache".env.production" 
 "backend/.env" 
+
+echo "backend/config/serviceAccountKey.json" >> .gitignore
+echo ".env" >> .gitignore

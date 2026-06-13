@@ -1,13 +1,18 @@
 // src/components/AuthModal.tsx
-import React, { useState } from 'react';
-import { X, Mail, Lock, Eye, EyeOff, CheckCircle, Globe } from 'lucide-react';
-import {
-  auth,
-  signUpWithEmail,
-  signInWithEmail,
-} from '../config/firebase';
-import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
-import { GoogleAuthProvider, signInWithCredential, signInWithPopup } from 'firebase/auth';
+
+import React, { useState, useEffect } from 'react';
+import { X, Mail, Lock, Eye, EyeOff, CheckCircle, Globe, User } from 'lucide-react';
+import { auth } from '../config/firebase';
+import { 
+  GoogleAuthProvider, 
+  signInWithPopup, 
+  signInWithRedirect, 
+  getRedirectResult,
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  updateProfile
+} from 'firebase/auth';
+
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
 
@@ -31,31 +36,44 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
   const { setCurrentUser, setUserData } = useAppStore();
   const theme = getTheme(themeMode as any);
 
+  // Handle redirect result (for mobile)
+  useEffect(() => {
+    getRedirectResult(auth).then((result) => {
+      if (result?.user) {
+        handleAuthSuccess(result.user);
+      }
+    }).catch((error) => {
+      console.error('Redirect sign-in error:', error);
+      setError(error.message);
+    });
+  }, []);
+
   if (!isOpen) return null;
 
   const handleGoogleSignIn = async () => {
+    setLoading(true);
+    setError('');
+    
     try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
       // Check if running on native device
-      const isNative = (window as any).Capacitor?.isNativePlatform?.();
+      const isNative = (window as any).Capacitor?.isNativePlatform();
       
       if (isNative) {
-        // Use native Google Sign-In
-        const result = await GoogleAuth.signIn();
-        console.log('Google user:', result);
-        
-        // Create Firebase credential from the Google token
-        const credential = GoogleAuthProvider.credential(result.authentication.idToken);
-        const userCredential = await signInWithCredential(auth, credential);
-        handleAuthSuccess(userCredential.user);
+        // On mobile, use redirect (popup doesn't work in WebView)
+        await signInWithRedirect(auth, provider);
+        // The result will be handled by the redirect listener below
       } else {
-        // Use web popup (existing code)
-        const provider = new GoogleAuthProvider();
+        // On web, use popup
         const result = await signInWithPopup(auth, provider);
         handleAuthSuccess(result.user);
       }
-    } catch (error) {
-      console.error('Sign in error:', error);
-      setError('Failed to sign in');
+    } catch (err: any) {
+      console.error('Sign in error:', err);
+      setError(err.message || 'Failed to sign in');
+      setLoading(false);
     }
   };
 
@@ -291,15 +309,17 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
           </div>
 
           {/* Google Sign In */}
-          <button
-            onClick={handleGoogleSignIn}
-            disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
-            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
-          >
-            <Globe size={20} />
-            Google
-          </button>
+          {!(window as any).Capacitor?.isNativePlatform() && (
+            <button
+              onClick={handleGoogleSignIn}
+              disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-80"
+              style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
+            >
+              <Globe size={20} />
+              Google
+            </button>
+          )}
 
           {/* Footer Links */}
           <div className="mt-5 text-center">
@@ -351,9 +371,8 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
   );
 };
 
-export default AuthModal;
 
-function handleAuthSuccess(user: User) {
+function handleAuthSuccess(user: any) {
   if (!user) return;
 
   const userData = {
@@ -366,3 +385,42 @@ function handleAuthSuccess(user: User) {
   localStorage.setItem('logos_user', JSON.stringify(userData));
   console.log('Google sign-in success', userData);
 }
+
+async function signInWithEmail(email: string, password: string) {
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return {
+      success: true,
+      user: result.user,
+      error: '',
+    };
+  } catch (err: any) {
+    console.error('Email sign-in error:', err);
+    return {
+      success: false,
+      user: null,
+      error: err?.message || 'Failed to sign in with email',
+    };
+  }
+}
+
+// At the bottom of AuthModal.tsx, OUTSIDE the component:
+
+  async function signUpWithEmail(email: string, password: string, displayName: string) {
+    try {
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      // If a displayName was provided, update the new user's profile
+      if (displayName && result.user) {
+        try {
+          await updateProfile(result.user, { displayName });
+        } catch (profileErr) {
+          console.warn('Failed to set displayName:', profileErr);
+        }
+      }
+      return { success: true, user: result.user, error: '' };
+    } catch (err: any) {
+      return { success: false, user: null, error: err?.message || 'Failed to create account' };
+    }
+  }
+
+export default AuthModal;

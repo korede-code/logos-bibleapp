@@ -5,13 +5,13 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
-import { logoutUser, getUserData, auth, updateUserProStatus } from '../config/firebase';
+import { logoutUser, getUserData, auth, updateUserProStatus, saveUserToFirestore } from '../config/firebase';
 import AuthModal from './AuthModal';
 import ProUpgradeModal from './ProUpgradeModal';
 import PrivacyPolicyModal from './PrivacyPolicyModal';
 
 const SettingsScreen: React.FC = () => {
-  const { readerSettings, navigate, setCurrentUser, setProStatus, isPro: storeIsPro } = useAppStore();
+  const { readerSettings, navigate, setCurrentUser } = useAppStore();
   const theme = getTheme(readerSettings.theme);
   
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -21,68 +21,84 @@ const SettingsScreen: React.FC = () => {
   const [isPro, setIsPro] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  const updateProStatus = (status: boolean, uid?: string) => {
+    useAppStore.setState({ isPro: status });
+    const userId = uid ?? user?.uid;
+    if (userId) {
+      localStorage.setItem(`isPro_${userId}`, JSON.stringify(status));
+    }
+    localStorage.setItem('logos_daily_pro', JSON.stringify(status));
+  };
+
+
+
+  const refreshProStatus = async () => {
+    if (!user?.uid) return;
+
+    try {
+      const response = await fetch(
+        `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`
+      );
+      const data = await response.json();
+      
+      if (data.success && data.isPro) {
+        useAppStore.getState().setProStatus(true);
+        localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(true));
+        localStorage.setItem('logos_daily_pro', JSON.stringify(true));
+        showToast('✅ Pro status confirmed!', '#4CAF50');
+      }
+    } catch (e) {
+      console.error('Failed to check Pro status:', e);
+    }
+  };
+
   // Listen to auth state changes
   // src/components/SettingsScreen.tsx - Update the auth listener
 
+  // In SettingsScreen.tsx, update the auth useEffect
+
   useEffect(() => {
-    console.log('SettingsScreen: Setting up auth listener');
-    
-    const unsubscribe = auth.onAuthStateChanged(async (authUser) => {
-      console.log('SettingsScreen: Auth changed', authUser?.email);
-      setUser(authUser);
+    const unsubscribe = auth.onAuthStateChanged(async (user) => {
+      setCurrentUser(user);
       
-      if (authUser) {
-        // Save user to store
-        setCurrentUser(authUser);
+      if (user) {
+        // Save user to localStorage
+        localStorage.setItem('logos_user', JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        }));
         
-        // Get user data from Firestore (includes pro status)
+        // Force refresh token to get latest claims
         try {
-          // First, ensure user document exists
-          const userData = await getUserData(authUser.uid);
+          const idTokenResult = await user.getIdTokenResult(true);
+          console.log('Token claims:', idTokenResult.claims);
           
-          if (userData) {
-            console.log('📦 Firestore user data:', userData);
-            const isProUser = userData.isPro === true;
-            console.log(`🌟 Pro status from Firestore: ${isProUser ? 'PRO' : 'FREE'}`);
-            setIsPro(isProUser);
-            setProStatus(isProUser);
-            
-            // Also save to localStorage as backup
-            localStorage.setItem(`isPro_${authUser.uid}`, isProUser ? 'true' : 'false');
-          } else {
-            // Create user document if it doesn't exist
-            console.log('📝 Creating new user document in Firestore...');
-            await saveUserToFirestore(authUser);
-            setIsPro(false);
-            setProStatus(false);
+          // Check if Pro status is in custom claims
+          if (idTokenResult.claims.isPro) {
+            updateProStatus(true, user.uid);
           }
-        } catch (error) {
-          console.error('Failed to fetch user data:', error);
-          // Fallback to localStorage
-          const storedPro = localStorage.getItem(`isPro_${authUser.uid}`) === 'true';
-          setIsPro(storedPro);
-          setProStatus(storedPro);
+        } catch (e) {
+          console.error('Token refresh error:', e);
         }
         
-        // Save user to localStorage for quick access
-        localStorage.setItem('logos_user', JSON.stringify({
-          uid: authUser.uid,
-          email: authUser.email,
-          displayName: authUser.displayName,
-          photoURL: authUser.photoURL,
-        }));
-      } else {
-        // User signed out
-        setCurrentUser(null);
-        setProStatus(false);
-        setIsPro(false);
-        localStorage.removeItem('logos_user');
+        // Also check Firestore
+        try {
+          const userData = await getUserData(user.uid);
+          console.log('Firestore user data:', userData);
+          
+          if (userData?.isPro) {
+            updateProStatus(true, user.uid);
+          }
+        } catch (e) {
+          console.error('Firestore check error:', e);
+        }
       }
-      setLoading(false);
     });
     
     return () => unsubscribe();
-  }, [setCurrentUser, setProStatus]);
+  }, []);
 
   // Force check pro status on mount and when user changes
   useEffect(() => {
@@ -91,18 +107,18 @@ const SettingsScreen: React.FC = () => {
         const savedPro = localStorage.getItem(`isPro_${user.uid}`) === 'true';
         console.log(`🔍 Checking pro status for ${user.uid}: ${savedPro ? 'PRO' : 'FREE'}`);
         setIsPro(savedPro);
-        setProStatus(savedPro);
+        updateProStatus(savedPro);
       }
     };
     checkProStatus();
-  }, [user, setProStatus]);
+  }, [user]);
 
   const handleSignOut = async () => {
     const result = await logoutUser();
     if (result.success) {
       setUser(null);
       setIsPro(false);
-      setProStatus(false);
+      updateProStatus(false);
       setCurrentUser(null);
       localStorage.removeItem('logos_user');
       showToast('Signed out successfully', '#4CAF50');

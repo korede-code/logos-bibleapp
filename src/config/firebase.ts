@@ -24,12 +24,12 @@ import {
 
 // Your Firebase configuration (replace with your actual values)
 const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID
+  apiKey: "AIzaSyDgkCgV7Noe8IdEkQM57dIFZCbYGVQ1HUg",
+  authDomain: "logos-daily.firebaseapp.com",
+  projectId: "logos-daily",
+  storageBucket: "logos-daily.firebasestorage.app",
+  messagingSenderId: "198751095778",
+  appId: "1:198751095778:web:f321db0dbdea4388cc07bb"
 };
 
 // Initialize Firebase
