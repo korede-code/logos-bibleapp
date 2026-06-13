@@ -3,11 +3,14 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const axios = require('axios');
 const crypto = require('crypto');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+app.use('/api/payments', paymentRoutes);
 
 
 app.use(cors({
@@ -30,8 +33,6 @@ app.get('/api/health', (req, res) => {
 });
 
 
-// Initialize Paystack payment
-// backend/server.js - Add this payment endpoint
 //const axios = require('axios');
 
 // Initialize Paystack payment
@@ -230,7 +231,7 @@ app.get('/api/bible/translations', (req, res) => {
     { code: 'YLT', name: "Young's Literal Translation", description: 'Very literal word-for-word translation', publicDomain: true, requiresPro: false },
     { code: 'BBE', name: 'Bible in Basic English', description: 'Simple English using 1000 basic words', publicDomain: true, requiresPro: false },
     { code: 'DARBY', name: 'Darby Translation', description: 'Literal translation by John Nelson Darby', publicDomain: true, requiresPro: false },
-    
+
     // Pro translations (require subscription)
     { code: 'NIV', name: 'New International Version', description: 'Most popular modern English translation', publicDomain: false, requiresPro: true },
     { code: 'NLT', name: 'New Living Translation', description: 'Easy-to-read modern translation', publicDomain: false, requiresPro: true },
@@ -464,21 +465,9 @@ app.get('/api/bible/search', (req, res) => {
 });
 
 // ============ START SERVER ============
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`
-╔══════════════════════════════════════════════════════════════╗
-║     ✅ Logos Daily API Server Running (MOCK MODE)            ║
-╠══════════════════════════════════════════════════════════════╣
-║  Port: ${PORT}                                               ║
-║  URL:  http://localhost:${PORT}                              ║
-╠══════════════════════════════════════════════════════════════╣
-║  📖 Test Endpoints:                                          ║
-║  • GET  http://localhost:${PORT}/api/health                  ║
-║  • GET  http://localhost:${PORT}/api/bible/votd              ║
-║  • GET  http://localhost:${PORT}/api/bible/votd?random=true  ║
-║  • GET  http://localhost:${PORT}/api/bible/translations      ║
-║  • GET  http://localhost:${PORT}/api/users/health            ║
-║  • POST http://localhost:${PORT}/api/payments/initialize     ║
-╚══════════════════════════════════════════════════════════════╝
-  `);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📡 Health: http://localhost:${PORT}/api/health`);
+  console.log(`💳 Payments: http://localhost:${PORT}/api/payments/initialize`);
 });
