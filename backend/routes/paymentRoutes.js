@@ -108,13 +108,12 @@ router.get('/pro-status/:userId', async (req, res) => {
     const userDoc = await db.collection('users').doc(userId).get();
 
     if (userDoc.exists) {
-      const data = userDoc.data();
-      res.json({ success: true, isPro: data.isPro || false, data });
+      res.json({ success: true, isPro: userDoc.data().isPro === true });
     } else {
       res.json({ success: true, isPro: false });
     }
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ success: false, isPro: false, error: error.message });
   }
 });
 

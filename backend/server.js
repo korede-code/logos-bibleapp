@@ -465,7 +465,6 @@ app.get('/api/bible/search', (req, res) => {
 });
 
 // ============ START SERVER ============
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`📡 Health: http://localhost:${PORT}/api/health`);
