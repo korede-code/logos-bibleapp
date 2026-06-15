@@ -13,22 +13,29 @@ const PORT = process.env.PORT || 3000;
 app.use('/api/payments', paymentRoutes);
 
 
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// SIMPLE CORS - Allow everything
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
 
 app.use(express.json());
 
 console.log('🚀 Starting Logos Daily API Server...');
 
-// ============ MOCK PAYMENT STORAGE ============
-const proUsers = new Map();
+// Import routes
+const paymentRoutes = require('./routes/paymentRoutes');
+app.use('/api/payments', paymentRoutes);
 
-// ============ HEALTH CHECK ============
+// Health check
 app.get('/api/health', (req, res) => {
-  console.log('✅ Health check called');
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
@@ -147,6 +154,40 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     console.error('❌ Verification failed:', error.message);
     res.status(500).json({ success: false, error: error.message });
   }
+});
+
+// Test endpoint directly in server.js
+app.post('/api/payments/test-set-pro', (req, res) => {
+  const { userId } = req.body;
+  console.log('📝 Setting Pro for:', userId);
+  
+  // Simple file-based storage
+  const fs = require('fs');
+  const path = require('path');
+  const dataFile = path.join(__dirname, 'data', 'users.json');
+  
+  // Create data directory if needed
+  const dataDir = path.join(__dirname, 'data');
+  if (!fs.existsSync(dataDir)) {
+    fs.mkdirSync(dataDir, { recursive: true });
+  }
+  
+  // Read existing data
+  let data = { users: {} };
+  if (fs.existsSync(dataFile)) {
+    data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  }
+  
+  // Update user
+  data.users[userId] = {
+    isPro: true,
+    proSince: new Date().toISOString(),
+  };
+  
+  // Save
+  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
+  
+  res.json({ success: true, message: 'Pro status set for ' + userId, isPro: true });
 });
 
 
@@ -465,8 +506,7 @@ app.get('/api/bible/search', (req, res) => {
 });
 
 // ============ START SERVER ============
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`📡 Health: http://localhost:${PORT}/api/health`);
-  console.log(`💳 Payments: http://localhost:${PORT}/api/payments/initialize`);
 });
