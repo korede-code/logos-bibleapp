@@ -83,7 +83,6 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
 
     let currentUserId = userId;
     let currentUserEmail = userEmail;
-    let data: any;
 
     try {
       console.log('💰 Starting Paystack payment...');
@@ -101,82 +100,48 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         throw new Error('Please sign in to upgrade to Pro');
       }
 
-      // Save user ID for callback
+      // Save for callback
       localStorage.setItem('pendingProUserId', currentUserId || '');
       localStorage.setItem('pendingProPlan', selectedPlan.id);
 
-      const API_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
+      const API_URL = 'https://logos-daily-backend.onrender.com/api';
 
       const response = await fetch(`${API_URL}/payments/initialize`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: currentUserEmail,
           amount: selectedPlan.amount,
           planId: selectedPlan.id,
-          userId: currentUserId || `user_${Date.now()}`,
+          userId: currentUserId,
         }),
       });
 
-      data = await response.json();
+      const data = await response.json();
       console.log('Payment init response:', data);
 
-      if (!data.success && !data.mock) {
+      if (!data.success) {
         throw new Error(data.error || 'Payment initialization failed');
       }
 
+      // Get the payment URL (Paystack checkout page)
+      const paymentUrl = data.paymentUrl || data.authorization_url;
+
       if (paymentUrl) {
+        // Redirect to Paystack to complete payment
+        console.log('🔗 Redirecting to:', paymentUrl);
         window.location.href = paymentUrl;
-      } else if (data.success) {
-       // Mock/development mode - directly upgrade
-       const uid = currentUserId || localStorage.getItem('pendingProUserId');
-       if (uid) {
-         localStorage.setItem(`isPro_${uid}`, 'true');
-         localStorage.setItem('logos_daily_pro', 'true');
-         setProStatus(true);
-         onSuccess?.();
-         showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
-         onClose();
-        }
       } else {
-        throw new Error('No payment URL received');
+        throw new Error('No payment URL received from server');
       }
 
-      if (data.verified || data.mock) {
-        const userId = currentUserId || localStorage.getItem('pendingProUserId');
-        
-        if (userId) {
-          // Save to localStorage as backup
-          localStorage.setItem(`isPro_${userId}`, 'true');
-          
-          // Save to Firestore - THIS IS KEY!
-          const expiryDate = new Date();
-          expiryDate.setDate(expiryDate.getDate() + selectedPlan.days);
-          await updateUserProStatus(userId, true, expiryDate.toISOString());
-          
-          console.log(`✅ Pro status saved to Firestore for user: ${userId}`);
-        }
-        
-        // Update store
-        setProStatus(true);
-        
-        // Call onSuccess
-        onSuccess();
-        
-        showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
-        onClose();
-      }
-
-      throw new Error('No payment URL received');
     } catch (err: any) {
       console.error('❌ Upgrade error:', err);
       setError(err.message || 'Payment failed. Please try again.');
       setProcessing(false);
     }
   };
-
+  
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div

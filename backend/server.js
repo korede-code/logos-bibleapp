@@ -50,52 +50,105 @@ app.get('/api/health', (req, res) => {
 // Initialize payment
 app.post('/api/payments/initialize', async (req, res) => {
   try {
-    const { email, amount, plan, userId } = req.body;
-    const reference = `LOGOS_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+    const { email, amount, planId, userId } = req.body;
+    const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
-    console.log('💰 Payment init:', { email, amount, plan, userId, reference });
+    console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
-    if (!PAYSTACK_SECRET) {
-      // Mock mode - return success directly
-      return res.json({
+    // If Paystack secret is configured, use real Paystack
+    if (process.env.PAYSTACK_SECRET) {
+      const https = require('https');
+      const params = JSON.stringify({
+        email: email,
+        amount: Math.round(amount * 100), // Convert to kobo
+        currency: 'NGN',
+        reference: reference,
+        callback_url: 'https://logos-daily.web.app/payment-success',
+        metadata: { userId, plan: planId }
+      });
+
+      const options = {
+        hostname: 'api.paystack.co',
+        port: 443,
+        path: '/transaction/initialize',
+        method: 'POST',
+        headers: {
+          Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET,
+          'Content-Type': 'application/json'
+        }
+      };
+
+      const payReq = https.request(options, (payRes) => {
+        let data = '';
+        payRes.on('data', chunk => data += chunk);
+        payRes.on('end', () => {
+          const result = JSON.parse(data);
+          if (result.status) {
+            // Return the REAL Paystack checkout URL
+            res.json({
+              success: true,
+              paymentUrl: result.data.authorization_url,
+              reference: reference
+            });
+          } else {
+            res.status(400).json({ success: false, error: result.message });
+          }
+        });
+      });
+      payReq.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+      payReq.write(params);
+      payReq.end();
+    } else {
+      // Mock mode - no Paystack key configured
+      res.json({
         success: true,
         message: 'Payment initialized (mock mode)',
-        paymentUrl: `https://logos-daily.web.app/payment-success?reference=${reference}`,
-        reference: reference,
+        paymentUrl: 'https://logos-daily.web.app/payment-success?reference=' + reference,
+        reference: reference
       });
     }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 
-    // Real Paystack call
+// Verify payment
+app.get('/api/payments/verify/:reference', (req, res) => {
+  const { reference } = req.params;
+  
+  if (process.env.PAYSTACK_SECRET) {
+    // Verify with Paystack
     const https = require('https');
-    const params = JSON.stringify({
-      email, amount: Math.round(amount * 100), currency: 'NGN',
-      reference, callback_url: `https://logos-daily.web.app/payment-success`,
-      metadata: { userId, plan }
-    });
-
     const options = {
-      hostname: 'api.paystack.co', port: 443, path: '/transaction/initialize',
-      method: 'POST',
-      headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }
+      hostname: 'api.paystack.co',
+      port: 443,
+      path: '/transaction/verify/' + reference,
+      method: 'GET',
+      headers: { Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET }
     };
-
-    const payReq = https.request(options, (payRes) => {
+    
+    https.get(options, (payRes) => {
       let data = '';
       payRes.on('data', chunk => data += chunk);
       payRes.on('end', () => {
         const result = JSON.parse(data);
-        if (result.status) {
-          res.json({ success: true, paymentUrl: result.data.authorization_url, reference });
+        if (result.status && result.data.status === 'success') {
+          // Payment verified - set Pro status
+          const userId = result.data.metadata?.userId;
+          if (userId) {
+            const users = readUsers();
+            users.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+            writeUsers(users);
+          }
+          res.json({ success: true, verified: true });
         } else {
-          res.status(400).json({ success: false, error: result.message });
+          res.json({ success: false, verified: false });
         }
       });
-    });
-    payReq.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
-    payReq.write(params);
-    payReq.end();
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    }).on('error', () => res.status(500).json({ success: false }));
+  } else {
+    // Mock verification
+    res.json({ success: true, verified: true });
   }
 });
 

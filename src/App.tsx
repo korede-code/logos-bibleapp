@@ -67,6 +67,40 @@ const App: React.FC = () => {
     return () => unsubscribe();
   }, [setCurrentUser, setProStatus]);
 
+  // In App.tsx
+
+  // Check if current URL is payment success
+  useEffect(() => {
+    const isPaymentCallback = window.location.pathname === '/payment-success' || 
+                            window.location.search.includes('reference=') ||
+                            window.location.search.includes('trxref=');
+  
+    if (isPaymentCallback) {
+      // Handle payment callback
+      const urlParams = new URLSearchParams(window.location.search);
+      const reference = urlParams.get('reference') || urlParams.get('trxref');
+    
+      if (reference) {
+        // Verify payment
+        fetch(`https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.success) {
+            const userId = localStorage.getItem('pendingProUserId');
+            if (userId) {
+              localStorage.setItem(`isPro_${userId}`, 'true');
+              localStorage.setItem('logos_daily_pro', 'true');
+              localStorage.removeItem('pendingProUserId');
+            }
+            useAppStore.getState().setProStatus(true);
+          }
+          // Redirect to settings
+          window.location.href = '/';
+        });
+      }
+    }
+  }, []);
+
   const ActiveScreen = SCREENS[currentScreen] ?? HomeScreen;
   const hideNav = readerSettings.focusMode && currentScreen === 'reader';
 
