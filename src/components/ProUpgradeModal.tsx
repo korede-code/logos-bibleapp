@@ -127,9 +127,21 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         throw new Error(data.error || 'Payment initialization failed');
       }
 
-      if (data.authorization_url) {
-        window.location.href = data.authorization_url;
-        return;
+      if (paymentUrl) {
+        window.location.href = paymentUrl;
+      } else if (data.success) {
+       // Mock/development mode - directly upgrade
+       const uid = currentUserId || localStorage.getItem('pendingProUserId');
+       if (uid) {
+         localStorage.setItem(`isPro_${uid}`, 'true');
+         localStorage.setItem('logos_daily_pro', 'true');
+         setProStatus(true);
+         onSuccess?.();
+         showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
+         onClose();
+        }
+      } else {
+        throw new Error('No payment URL received');
       }
 
       if (data.verified || data.mock) {
