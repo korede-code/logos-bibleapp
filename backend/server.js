@@ -113,41 +113,76 @@ app.post('/api/payments/initialize', async (req, res) => {
 });
 
 // Verify payment
+// Verify payment
 app.get('/api/payments/verify/:reference', (req, res) => {
   const { reference } = req.params;
+  console.log('🔍 Verifying payment:', reference);
   
+  // Read users data
+  const data = readUsers();
+  
+  // Check if this payment reference was processed
+  const paidUser = Object.entries(data.users).find(([uid, user]) => 
+    user.lastPaymentRef === reference
+  );
+  
+  if (paidUser) {
+    return res.json({ success: true, verified: true });
+  }
+  
+  // If Paystack is configured, verify with Paystack
   if (process.env.PAYSTACK_SECRET) {
-    // Verify with Paystack
     const https = require('https');
     const options = {
       hostname: 'api.paystack.co',
       port: 443,
-      path: '/transaction/verify/' + reference,
+      path: '/transaction/verify/' + encodeURIComponent(reference),
       method: 'GET',
       headers: { Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET }
     };
     
     https.get(options, (payRes) => {
-      let data = '';
-      payRes.on('data', chunk => data += chunk);
+      let body = '';
+      payRes.on('data', chunk => body += chunk);
       payRes.on('end', () => {
-        const result = JSON.parse(data);
-        if (result.status && result.data.status === 'success') {
-          // Payment verified - set Pro status
-          const userId = result.data.metadata?.userId;
-          if (userId) {
-            const users = readUsers();
-            users.users[userId] = { isPro: true, proSince: new Date().toISOString() };
-            writeUsers(users);
+        try {
+          const result = JSON.parse(body);
+          if (result.status && result.data.status === 'success') {
+            const userId = result.data.metadata?.userId;
+            if (userId) {
+              const users = readUsers();
+              users.users[userId] = {
+                isPro: true,
+                proSince: new Date().toISOString(),
+                lastPaymentRef: reference,
+                plan: result.data.metadata?.plan,
+              };
+              writeUsers(users);
+              console.log('✅ Pro activated for:', userId);
+            }
+            res.json({ success: true, verified: true });
+          } else {
+            res.json({ success: false, verified: false, message: 'Payment not successful' });
           }
-          res.json({ success: true, verified: true });
-        } else {
-          res.json({ success: false, verified: false });
+        } catch (e) {
+          res.status(500).json({ success: false, error: 'Failed to verify' });
         }
       });
-    }).on('error', () => res.status(500).json({ success: false }));
+    }).on('error', () => {
+      res.status(500).json({ success: false, error: 'Verification failed' });
+    });
   } else {
-    // Mock verification
+    // Mock verification - auto-approve
+    const userId = localStorage.getItem('pendingProUserId');
+    if (userId) {
+      const users = readUsers();
+      users.users[userId] = {
+        isPro: true,
+        proSince: new Date().toISOString(),
+        lastPaymentRef: reference,
+      };
+      writeUsers(users);
+    }
     res.json({ success: true, verified: true });
   }
 });
@@ -174,14 +209,21 @@ app.post('/api/payments/test-set-pro', (req, res) => {
 app.post('/api/payments/webhook', (req, res) => {
   const event = req.body;
   console.log('📨 Webhook:', event.event);
-  
+
   if (event.event === 'charge.success') {
     const userId = event.data?.metadata?.userId;
+    const reference = event.data?.reference;
+    
     if (userId) {
       const data = readUsers();
-      data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+      data.users[userId] = {
+        isPro: true,
+        proSince: new Date().toISOString(),
+        lastPaymentRef: reference,
+        plan: event.data?.metadata?.plan,
+      };
       writeUsers(data);
-      console.log('✅ Pro activated for:', userId);
+      console.log('✅ Pro activated via webhook for:', userId);
     }
   }
   res.sendStatus(200);
