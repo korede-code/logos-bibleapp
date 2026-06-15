@@ -114,60 +114,47 @@ app.post('/api/payments/initialize', async (req, res) => {
 
 // Verify payment
 // Verify payment
+// Verify payment
 app.get('/api/payments/verify/:reference', (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
 
-  if (process.env.PAYSTACK_SECRET) {
-    const https = require('https');
-    const options = {
-      hostname: 'api.paystack.co',
-      port: 443,
-      path: '/transaction/verify/' + encodeURIComponent(reference),
-      method: 'GET',
-      headers: { Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET }
-    };
-    
-    https.get(options, (payRes) => {
-      let body = '';
-      payRes.on('data', chunk => body += chunk);
-      payRes.on('end', () => {
-        try {
-          const result = JSON.parse(body);
-          if (result.status && result.data.status === 'success') {
-            const userId = result.data.metadata?.userId;
-            if (userId) {
-              const users = readUsers();
-              users.users[userId] = {
-                isPro: true, proSince: new Date().toISOString(),
-                lastPaymentRef: reference, plan: result.data.metadata?.plan,
-              };
-              writeUsers(users);
-            }
-            res.json({ success: true, verified: true });
-          } else {
-            res.json({ success: false, verified: false });
-          }
-        } catch (e) {
-          res.status(500).json({ success: false, error: 'Parse error' });
-        }
-      });
-    }).on('error', () => res.status(500).json({ success: false, error: 'API error' }));
-  } else {
-    // Mock mode
-    try {
-      const data = readUsers();
-      // Find any user and activate them
-      const users = readUsers();
-      users.users['test_user'] = {
-        isPro: true, proSince: new Date().toISOString(), lastPaymentRef: reference,
-      };
-      writeUsers(users);
-      res.json({ success: true, verified: true });
-    } catch (error) {
-      res.status(500).json({ success: false, error: error.message });
-    }
+  // If no Paystack key, DON'T auto-approve - require real payment
+  if (!process.env.PAYSTACK_SECRET) {
+    return res.json({ success: false, verified: false, message: 'Payment service not configured' });
   }
+
+  const https = require('https');
+  const options = {
+    hostname: 'api.paystack.co',
+    port: 443,
+    path: '/transaction/verify/' + encodeURIComponent(reference),
+    method: 'GET',
+    headers: { Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET }
+  };
+  
+  https.get(options, (payRes) => {
+    let body = '';
+    payRes.on('data', chunk => body += chunk);
+    payRes.on('end', () => {
+      try {
+        const result = JSON.parse(body);
+        if (result.status && result.data.status === 'success') {
+          const userId = result.data.metadata?.userId;
+          if (userId) {
+            const users = readUsers();
+            users.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+            writeUsers(users);
+          }
+          res.json({ success: true, verified: true });
+        } else {
+          res.json({ success: false, verified: false });
+        }
+      } catch (e) {
+        res.status(500).json({ success: false, error: 'Parse error' });
+      }
+    });
+  }).on('error', () => res.status(500).json({ success: false, error: 'API error' }));
 });
 
 // Check Pro status
@@ -179,14 +166,14 @@ app.get('/api/payments/pro-status/:userId', (req, res) => {
 });
 
 // Set Pro status (test endpoint)
-app.post('/api/payments/test-set-pro', (req, res) => {
-  const { userId } = req.body;
-  const data = readUsers();
-  data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
-  writeUsers(data);
-  console.log('✅ Pro set for:', userId);
-  res.json({ success: true, isPro: true });
-});
+//app.post('/api/payments/test-set-pro', (req, res) => {
+  //const { userId } = req.body;
+  //const data = readUsers();
+  //data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+  //writeUsers(data);
+  //console.log('✅ Pro set for:', userId);
+  //res.json({ success: true, isPro: true });
+//});
 
 // Webhook
 app.post('/api/payments/webhook', (req, res) => {
@@ -197,13 +184,12 @@ app.post('/api/payments/webhook', (req, res) => {
     const userId = event.data?.metadata?.userId;
     const reference = event.data?.reference;
     
-    if (userId) {
+    if (userId && reference) {
       const data = readUsers();
       data.users[userId] = {
         isPro: true,
         proSince: new Date().toISOString(),
         lastPaymentRef: reference,
-        plan: event.data?.metadata?.plan,
       };
       writeUsers(data);
       console.log('✅ Pro activated via webhook for:', userId);

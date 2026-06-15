@@ -1,12 +1,10 @@
 // src/components/PaymentCallback.tsx
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from '../store/appStore';
-import { getTheme } from '../utils/themeUtils';
 import { CheckCircle, XCircle, Loader2 } from 'lucide-react';
 
 const PaymentCallback: React.FC = () => {
-  const { readerSettings, setProStatus, setCurrentUser, currentUser } = useAppStore();
-  const theme = getTheme(readerSettings.theme);
+  const { setProStatus, setCurrentUser, currentUser } = useAppStore();
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [message, setMessage] = useState('Verifying your payment...');
 
@@ -22,7 +20,7 @@ const PaymentCallback: React.FC = () => {
         setStatus('error');
         setMessage('No payment reference found');
         setTimeout(() => {
-          window.location.href = '/settings';
+          window.location.href = '/';
         }, 3000);
         return;
       }
@@ -34,8 +32,8 @@ const PaymentCallback: React.FC = () => {
         
         console.log('Payment verification response:', data);
         
-        // In PaymentCallback.tsx, update the user ID retrieval
-        if (data.verified === true || data.success === true) {
+        // ✅ Only set Pro if payment is verified
+        if (data.success && data.verified === true) {
           // Get user ID from multiple sources
           let userId = localStorage.getItem('pendingProUserId');
           
@@ -64,30 +62,26 @@ const PaymentCallback: React.FC = () => {
           // Save pro status
           if (userId) {
             localStorage.setItem(`isPro_${userId}`, 'true');
+            localStorage.setItem('logos_daily_pro', 'true');
+            setProStatus(true);
             console.log(`✅ Pro status saved for user: ${userId}`);
           } else {
             console.warn('⚠️ No user ID found, cannot save pro status');
           }
           
-          // Also save a global flag
-          localStorage.setItem('isPro', 'true');
-          
-          // Update store
-          setProStatus(true);
-          
-          setStatus('success');
-          setMessage('Payment successful! You are now a Pro member.');
-          
           // Clear pending data
           localStorage.removeItem('pendingProUserId');
           localStorage.removeItem('pendingProPlan');
           
+          setStatus('success');
+          setMessage('Payment successful! You are now a Pro member.');
+          
           setTimeout(() => {
-            window.location.href = '/settings';
+            window.location.href = '/';
           }, 2000);
         } else {
           setStatus('error');
-          setMessage('Payment verification failed. Please contact support.');
+          setMessage(data.message || 'Payment verification failed. Please contact support.');
         }
       } catch (error) {
         console.error('Payment verification error:', error);
@@ -98,36 +92,37 @@ const PaymentCallback: React.FC = () => {
     
     verifyPayment();
   }, [setProStatus, setCurrentUser, currentUser]);
-  
+
   return (
-    <div className="flex items-center justify-center h-screen" style={{ backgroundColor: theme.bg }}>
-      <div className="text-center p-8 max-w-md">
+    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: '#1a1a2e' }}>
+      <div className="text-center p-8">
         {status === 'loading' && (
           <>
-            <Loader2 size={48} className="animate-spin mx-auto mb-4" style={{ color: theme.accent }} />
-            <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Verifying Payment</h2>
-            <p style={{ color: theme.textMuted }}>{message}</p>
+            <Loader2 size={48} className="animate-spin mx-auto mb-4" style={{ color: '#f59e0b' }} />
+            <h2 className="text-xl font-bold text-white mb-2">Verifying Payment</h2>
+            <p className="text-gray-400">{message}</p>
           </>
         )}
+        
         {status === 'success' && (
           <>
             <CheckCircle size={48} className="mx-auto mb-4" style={{ color: '#4CAF50' }} />
-            <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Payment Successful!</h2>
-            <p style={{ color: theme.textMuted }}>{message}</p>
-            <p className="text-sm mt-4" style={{ color: theme.textFaint }}>Redirecting to settings...</p>
+            <h2 className="text-xl font-bold text-white mb-2">Payment Successful!</h2>
+            <p className="text-gray-400">{message}</p>
           </>
         )}
+        
         {status === 'error' && (
           <>
             <XCircle size={48} className="mx-auto mb-4" style={{ color: '#e53935' }} />
-            <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Payment Verification Failed</h2>
-            <p style={{ color: theme.textMuted }}>{message}</p>
+            <h2 className="text-xl font-bold text-white mb-2">Verification Failed</h2>
+            <p className="text-gray-400">{message}</p>
             <button
-              onClick={() => window.location.href = '/settings'}
-              className="mt-6 px-6 py-2 rounded-xl font-semibold"
-              style={{ backgroundColor: theme.accent, color: 'white' }}
+              onClick={() => window.location.href = '/'}
+              className="mt-4 px-6 py-2 rounded-lg font-semibold"
+              style={{ backgroundColor: '#8B4513', color: 'white' }}
             >
-              Back to Settings
+              Go to Home
             </button>
           </>
         )}

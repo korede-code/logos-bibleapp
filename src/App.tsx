@@ -7,6 +7,7 @@ import ReaderScreen from './components/ReaderScreen';
 import SearchScreen from './components/SearchScreen';
 import ReadingPlansScreen from './components/ReadingPlansScreen';
 import NotesScreen from './components/NotesScreen';
+import PaymentCallback from './components/PaymentCallback';
 import PrayerScreen from './components/PrayerScreen';
 import ProgressScreen from './components/ProgressScreen';
 import BookmarksScreen from './components/BookmarksScreen';
@@ -26,6 +27,7 @@ const SCREENS: Record<string, React.ComponentType> = {
   bookmarks: BookmarksScreen,
   groups: GroupsScreen,
   settings: SettingsScreen,
+  'payment-callback': PaymentCallback,
 };
 
 const App: React.FC = () => {
@@ -71,12 +73,14 @@ const App: React.FC = () => {
 
   // Check if current URL is payment success
   useEffect(() => {
+    const path = window.location.pathname;
     const isPaymentCallback = window.location.pathname === '/payment-success' || 
                             window.location.search.includes('reference=') ||
                             window.location.search.includes('trxref=');
   
     if (isPaymentCallback) {
       // Handle payment callback
+      useAppStore.getState().navigate('payment-callback' as any);
       const urlParams = new URLSearchParams(window.location.search);
       const reference = urlParams.get('reference') || urlParams.get('trxref');
     
