@@ -27,6 +27,7 @@ const SettingsScreen: React.FC = () => {
   const [user, setUser] = useState<any>(null);
   const [isPro, setIsPro] = useState(false);
   const [loading, setLoading] = useState(true);
+  const userData = await getUserData(user.uid);
 
   const updateProStatus = (status: boolean, uid?: string) => {
     updateStoreProStatus(status);  // ✅ Use store function
@@ -45,17 +46,23 @@ const SettingsScreen: React.FC = () => {
 
     try {
       const response = await fetch(
-        `https://logos-daily-backend.onrender.com/api/payments/pro-status/${firebaseUser.uid}`
+       `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`
       );
       const data = await response.json();
-      console.log('🌟 Backend Pro status:', data);
-      
+      console.log('🌟 Pro status from Backend:', data.isPro ? 'PRO' : 'FREE');
+
       if (data.isPro) {
-        updateStoreProStatus(true, firebaseUser.uid);
+        updateProStatus(true, user.uid);
         setIsPro(true);
       }
     } catch (e) {
       console.error('Backend check error:', e);
+      // Fallback to localStorage
+      const savedPro = localStorage.getItem(`isPro_${user.uid}`) === 'true';
+      if (savedPro) {
+        updateProStatus(true, user.uid);
+        setIsPro(true);
+      } 
     }
   };
 

@@ -39,14 +39,24 @@ const App: React.FC = () => {
       console.log('App: Auth state changed', user?.email);
       
       if (user) {
-        // Get user data from Firestore
-        const userData = await getUserData(user.uid);
-        const isProUser = userData?.isPro === true;
-        
-        setCurrentUser(user);
-        setProStatus(isProUser);
-        
-        console.log(`🌟 App: Pro status from Firestore = ${isProUser}`);
+        try {
+          const response = await fetch(
+          `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`
+          );
+          const data = await response.json();
+          console.log('🌟 Pro status from Backend:', data.isPro);
+
+          if (data.isPro) {
+            useAppStore.getState().setProStatus(true);
+            localStorage.setItem(`isPro_${user.uid}`, 'true');
+            localStorage.setItem('logos_daily_pro', 'true');
+          }
+        } catch (error) {
+          // Fallback to localStorage
+          const savedPro = localStorage.getItem(`isPro_${user.uid}`) === 'true';
+          useAppStore.getState().setProStatus(savedPro);
+        }
+      
       } else {
         setCurrentUser(null);
         setProStatus(false);
