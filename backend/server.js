@@ -117,20 +117,7 @@ app.post('/api/payments/initialize', async (req, res) => {
 app.get('/api/payments/verify/:reference', (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
-  
-  // Read users data
-  const data = readUsers();
-  
-  // Check if this payment reference was processed
-  const paidUser = Object.entries(data.users).find(([uid, user]) => 
-    user.lastPaymentRef === reference
-  );
-  
-  if (paidUser) {
-    return res.json({ success: true, verified: true });
-  }
-  
-  // If Paystack is configured, verify with Paystack
+
   if (process.env.PAYSTACK_SECRET) {
     const https = require('https');
     const options = {
@@ -152,38 +139,34 @@ app.get('/api/payments/verify/:reference', (req, res) => {
             if (userId) {
               const users = readUsers();
               users.users[userId] = {
-                isPro: true,
-                proSince: new Date().toISOString(),
-                lastPaymentRef: reference,
-                plan: result.data.metadata?.plan,
+                isPro: true, proSince: new Date().toISOString(),
+                lastPaymentRef: reference, plan: result.data.metadata?.plan,
               };
               writeUsers(users);
-              console.log('✅ Pro activated for:', userId);
             }
             res.json({ success: true, verified: true });
           } else {
-            res.json({ success: false, verified: false, message: 'Payment not successful' });
+            res.json({ success: false, verified: false });
           }
         } catch (e) {
-          res.status(500).json({ success: false, error: 'Failed to verify' });
+          res.status(500).json({ success: false, error: 'Parse error' });
         }
       });
-    }).on('error', () => {
-      res.status(500).json({ success: false, error: 'Verification failed' });
-    });
+    }).on('error', () => res.status(500).json({ success: false, error: 'API error' }));
   } else {
-    // Mock verification - auto-approve
-    const userId = localStorage.getItem('pendingProUserId');
-    if (userId) {
+    // Mock mode
+    try {
+      const data = readUsers();
+      // Find any user and activate them
       const users = readUsers();
-      users.users[userId] = {
-        isPro: true,
-        proSince: new Date().toISOString(),
-        lastPaymentRef: reference,
+      users.users['test_user'] = {
+        isPro: true, proSince: new Date().toISOString(), lastPaymentRef: reference,
       };
       writeUsers(users);
+      res.json({ success: true, verified: true });
+    } catch (error) {
+      res.status(500).json({ success: false, error: error.message });
     }
-    res.json({ success: true, verified: true });
   }
 });
 
