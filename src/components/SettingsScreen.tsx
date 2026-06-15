@@ -5,7 +5,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
-import { logoutUser, getUserData, auth, updateUserProStatus, saveUserToFirestore } from '../config/firebase';
+import { logoutUser, auth } from '../config/firebase';
 import AuthModal from './AuthModal';
 import ProUpgradeModal from './ProUpgradeModal';
 import PrivacyPolicyModal from './PrivacyPolicyModal';
@@ -102,14 +102,7 @@ const SettingsScreen: React.FC = () => {
         }
         
         // Check Firestore
-        try {
-          const userData = await getUserData(firebaseUser.uid);
-          if (userData?.isPro) {
-            updateProStatus(true, firebaseUser.uid);
-          }
-        } catch (e) {
-          console.error('Firestore check error:', e);
-        }
+        
       }
       
       // ✅ FIX: Set loading to false after auth check completes
