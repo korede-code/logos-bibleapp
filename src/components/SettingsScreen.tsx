@@ -45,18 +45,17 @@ const SettingsScreen: React.FC = () => {
 
     try {
       const response = await fetch(
-        `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`
+        `https://logos-daily-backend.onrender.com/api/payments/pro-status/${firebaseUser.uid}`
       );
       const data = await response.json();
+      console.log('🌟 Backend Pro status:', data);
       
-      if (data.success && data.isPro) {
-        updateStoreProStatus(true);
-        localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(true));
-        localStorage.setItem('logos_daily_pro', JSON.stringify(true));
-        showToast('✅ Pro status confirmed!', '#4CAF50');
+      if (data.isPro) {
+        updateStoreProStatus(true, firebaseUser.uid);
+        setIsPro(true);
       }
     } catch (e) {
-      console.error('Failed to check Pro status:', e);
+      console.error('Backend check error:', e);
     }
   };
 
