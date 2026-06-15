@@ -1,21 +1,9 @@
+// backend/server.js
 const express = require('express');
-const cors = require('cors');
-const dotenv = require('dotenv');
-const axios = require('axios');
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-//const paymentRoutes = require('./routes/paymentRoutes');
-
-dotenv.config();
-
 const app = express();
-//const PORT = process.env.PORT || 3000;
 
-app.use('/api/payments', paymentRoutes);
-
-
-// SIMPLE CORS - Allow everything
 // CORS - Allow everything
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -59,10 +47,6 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-
-//const axios = require('axios');
-
-// Initialize Paystack payment
 // Initialize payment
 app.post('/api/payments/initialize', async (req, res) => {
   try {
@@ -115,64 +99,14 @@ app.post('/api/payments/initialize', async (req, res) => {
   }
 });
 
-// Verify payment endpoint
-app.get('/api/payments/verify/:reference', async (req, res) => {
-  const { reference } = req.params;
-  console.log(`🔍 Verifying payment: ${reference}`);
-  
-  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-  
-  if (!PAYSTACK_SECRET) {
-    return res.status(500).json({ success: false, error: 'Paystack not configured' });
-  }
-  
-  try {
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` },
-        timeout: 10000
-      }
-    );
-    
-    const paymentData = response.data.data;
-    
-    if (paymentData.status === 'success') {
-      console.log('✅ Payment verified successfully');
-      
-      // Get plan details
-      const planId = paymentData.metadata?.planId || 'monthly';
-      const plans = {
-        monthly: { days: 30, name: 'Monthly Pro' },
-        yearly: { days: 365, name: 'Yearly Pro' },
-        lifetime: { days: 9999, name: 'Lifetime Access' }
-      };
-      const plan = plans[planId];
-      const expiryDate = new Date();
-      expiryDate.setDate(expiryDate.getDate() + plan.days);
-      
-      res.json({
-        success: true,
-        verified: true,
-        data: {
-          reference: paymentData.reference,
-          amount: paymentData.amount,
-          userId: paymentData.metadata?.userId,
-          planId: planId,
-          planName: plan.name,
-          expiryDate: expiryDate.toISOString(),
-        }
-      });
-    } else {
-      res.json({ success: false, verified: false, message: 'Payment not successful' });
-    }
-  } catch (error) {
-    console.error('❌ Verification failed:', error.message);
-    res.status(500).json({ success: false, error: error.message });
-  }
+// Check Pro status
+app.get('/api/payments/pro-status/:userId', (req, res) => {
+  const { userId } = req.params;
+  const data = readUsers();
+  const isPro = data.users[userId]?.isPro === true;
+  res.json({ success: true, isPro });
 });
 
-// Test endpoint directly in server.js
 // Set Pro status (test endpoint)
 app.post('/api/payments/test-set-pro', (req, res) => {
   const { userId } = req.body;
@@ -183,9 +117,6 @@ app.post('/api/payments/test-set-pro', (req, res) => {
   res.json({ success: true, isPro: true });
 });
 
-
-
-// Paystack webhook (for server-to-server notifications)
 // Webhook
 app.post('/api/payments/webhook', (req, res) => {
   const event = req.body;
@@ -201,50 +132,6 @@ app.post('/api/payments/webhook', (req, res) => {
     }
   }
   res.sendStatus(200);
-});
-
-function getPlanDetails(planId) {
-  const plans = {
-    monthly: { name: 'Monthly Pro', days: 30, amount: 2990 },
-    yearly: { name: 'Yearly Pro', days: 365, amount: 29900 },
-    lifetime: { name: 'Lifetime Access', days: 9999, amount: 99900 },
-  };
-  return plans[planId] || plans.monthly;
-}
-
-// ============ USER ROUTES ============
-app.post('/api/users/set-pro-status', (req, res) => {
-  console.log('📝 Setting pro status:', req.body);
-  const { uid, isPro, planId, expiryDate } = req.body;
-  
-  if (uid) {
-    proUsers.set(uid, {
-      isPro: isPro || false,
-      planId: planId,
-      expiryDate: expiryDate,
-      updatedAt: new Date().toISOString()
-    });
-    console.log(`✅ User ${uid} pro status set to ${isPro}`);
-  }
-  
-  res.json({ success: true });
-});
-
-app.get('/api/users/check-pro/:uid', (req, res) => {
-  const { uid } = req.params;
-  const user = proUsers.get(uid);
-  console.log(`🔍 Checking pro status for ${uid}: ${user?.isPro || false}`);
-  
-  res.json({ 
-    success: true, 
-    isPro: user?.isPro || false,
-    planId: user?.planId,
-    expiryDate: user?.expiryDate
-  });
-});
-
-app.get('/api/users/health', (req, res) => {
-  res.json({ status: 'ok', service: 'user-routes' });
 });
 
 // ============ SUPPORTED TRANSLATIONS ============
