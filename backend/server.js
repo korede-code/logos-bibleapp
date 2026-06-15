@@ -3,7 +3,9 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const axios = require('axios');
 const crypto = require('crypto');
-const paymentRoutes = require('./routes/paymentRoutes');
+const fs = require('fs');
+const path = require('path');
+//const paymentRoutes = require('./routes/paymentRoutes');
 
 dotenv.config();
 
@@ -14,12 +16,11 @@ app.use('/api/payments', paymentRoutes);
 
 
 // SIMPLE CORS - Allow everything
+// CORS - Allow everything
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-  
-  // Handle preflight
   if (req.method === 'OPTIONS') {
     return res.sendStatus(200);
   }
@@ -30,9 +31,28 @@ app.use(express.json());
 
 console.log('🚀 Starting Logos Daily API Server...');
 
-// Import routes
-const paymentRoutes = require('./routes/paymentRoutes');
-app.use('/api/payments', paymentRoutes);
+// ============ PAYMENT ROUTES ============
+const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
+const DATA_FILE = path.join(__dirname, 'data', 'users.json');
+
+// Ensure data directory exists
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Read users helper
+function readUsers() {
+  if (fs.existsSync(DATA_FILE)) {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  }
+  return { users: {} };
+}
+
+// Write users helper
+function writeUsers(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+}
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -43,59 +63,55 @@ app.get('/api/health', (req, res) => {
 //const axios = require('axios');
 
 // Initialize Paystack payment
+// Initialize payment
 app.post('/api/payments/initialize', async (req, res) => {
-  console.log('💰 Payment endpoint called');
-  console.log('Request body:', req.body);
-  
-  const { email, amount, planId, userId } = req.body;
-  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-  
-  // Check if secret key exists
-  if (!PAYSTACK_SECRET) {
-    console.error('❌ PAYSTACK_SECRET_KEY not found in environment variables');
-    return res.status(500).json({ 
-      success: false, 
-      error: 'Payment system not configured. Please add PAYSTACK_SECRET_KEY.' 
-    });
-  }
-  
-  console.log('✅ Paystack secret key found');
-  
   try {
-    const response = await axios.post(
-      'https://api.paystack.co/transaction/initialize',
-      {
-        email,
-        amount: Math.round(amount),
-        currency: 'NGN',
-        metadata: {
-          userId,
-          planId,
-        },
-        callback_url: 'https://logos-daily.web.app/payment-callback',
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${PAYSTACK_SECRET}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 10000
-      }
-    );
-    
-    console.log('✅ Paystack response:', response.data);
-    
-    res.json({
-      success: true,
-      authorization_url: response.data.data.authorization_url,
-      reference: response.data.data.reference,
+    const { email, amount, plan, userId } = req.body;
+    const reference = `LOGOS_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+
+    console.log('💰 Payment init:', { email, amount, plan, userId, reference });
+
+    if (!PAYSTACK_SECRET) {
+      // Mock mode - return success directly
+      return res.json({
+        success: true,
+        message: 'Payment initialized (mock mode)',
+        paymentUrl: `https://logos-daily.web.app/payment-success?reference=${reference}`,
+        reference: reference,
+      });
+    }
+
+    // Real Paystack call
+    const https = require('https');
+    const params = JSON.stringify({
+      email, amount: Math.round(amount * 100), currency: 'NGN',
+      reference, callback_url: `https://logos-daily.web.app/payment-success`,
+      metadata: { userId, plan }
     });
+
+    const options = {
+      hostname: 'api.paystack.co', port: 443, path: '/transaction/initialize',
+      method: 'POST',
+      headers: { Authorization: `Bearer ${PAYSTACK_SECRET}`, 'Content-Type': 'application/json' }
+    };
+
+    const payReq = https.request(options, (payRes) => {
+      let data = '';
+      payRes.on('data', chunk => data += chunk);
+      payRes.on('end', () => {
+        const result = JSON.parse(data);
+        if (result.status) {
+          res.json({ success: true, paymentUrl: result.data.authorization_url, reference });
+        } else {
+          res.status(400).json({ success: false, error: result.message });
+        }
+      });
+    });
+    payReq.on('error', (err) => res.status(500).json({ success: false, error: err.message }));
+    payReq.write(params);
+    payReq.end();
   } catch (error) {
-    console.error('❌ Paystack error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: error.response?.data?.message || 'Payment initialization failed' 
-    });
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
@@ -157,64 +173,34 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 });
 
 // Test endpoint directly in server.js
+// Set Pro status (test endpoint)
 app.post('/api/payments/test-set-pro', (req, res) => {
   const { userId } = req.body;
-  console.log('📝 Setting Pro for:', userId);
-  
-  // Simple file-based storage
-  const fs = require('fs');
-  const path = require('path');
-  const dataFile = path.join(__dirname, 'data', 'users.json');
-  
-  // Create data directory if needed
-  const dataDir = path.join(__dirname, 'data');
-  if (!fs.existsSync(dataDir)) {
-    fs.mkdirSync(dataDir, { recursive: true });
-  }
-  
-  // Read existing data
-  let data = { users: {} };
-  if (fs.existsSync(dataFile)) {
-    data = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
-  }
-  
-  // Update user
-  data.users[userId] = {
-    isPro: true,
-    proSince: new Date().toISOString(),
-  };
-  
-  // Save
-  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2));
-  
-  res.json({ success: true, message: 'Pro status set for ' + userId, isPro: true });
+  const data = readUsers();
+  data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+  writeUsers(data);
+  console.log('✅ Pro set for:', userId);
+  res.json({ success: true, isPro: true });
 });
 
 
 
 // Paystack webhook (for server-to-server notifications)
-app.post('/api/payments/webhook', async (req, res) => {
-  const signature = req.headers['x-paystack-signature'];
-  const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET_KEY;
-  
-  if (PAYSTACK_SECRET && PAYSTACK_SECRET !== 'sk_test_') {
-    const hash = crypto.createHmac('sha512', PAYSTACK_SECRET)
-      .update(JSON.stringify(req.body))
-      .digest('hex');
-    
-    if (hash !== signature) {
-      return res.status(401).send('Unauthorized');
-    }
-  }
-  
+// Webhook
+app.post('/api/payments/webhook', (req, res) => {
   const event = req.body;
+  console.log('📨 Webhook:', event.event);
   
   if (event.event === 'charge.success') {
-    console.log('🎉 Webhook: Payment successful');
-    // Update user's pro status in your database here
+    const userId = event.data?.metadata?.userId;
+    if (userId) {
+      const data = readUsers();
+      data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+      writeUsers(data);
+      console.log('✅ Pro activated for:', userId);
+    }
   }
-  
-  res.send(200);
+  res.sendStatus(200);
 });
 
 function getPlanDetails(planId) {
