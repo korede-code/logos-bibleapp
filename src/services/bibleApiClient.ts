@@ -18,7 +18,7 @@ declare global {
   }
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api/bible';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
@@ -200,47 +200,27 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Get a specific chapter
-   */
-  async getChapter(
-    translation: string,
-    book: string,
-    chapter: number
-  ): Promise<BibleApiResponse & { data?: BibleVerse[] }> {
-    try {
-      const endpoint = `/bible/${translation}/${book}/${chapter}`;
-      const response = await this.request<BibleApiResponse>(endpoint);
-      return response;
-    } catch (error) {
-      console.error(`Failed to fetch chapter ${book} ${chapter}:`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+  // src/services/bibleApiClient.ts
+
+  // Change from bible-api.com to your Render backend
+  //const BIBLE_API_BASE = 'https://logos-daily-backend.onrender.com/api/bible';
+
+  async getChapter(translation: string, book: string, chapter: number) {
+    const url = `${BIBLE_API_BASE}/${encodeURIComponent(book)}/${chapter}?translation=${translation}`;
+    console.log('📡 Fetching chapter:', url);
+  
+    const response = await fetch(url);
+    const data = await response.json();
+    return data;
   }
 
-  /**
-   * Get a specific verse
-   */
-  async getVerse(
-    translation: string,
-    book: string,
-    chapter: number,
-    verse: number
-  ): Promise<BibleApiResponse & { data?: BibleVerse[] }> {
-    try {
-      const endpoint = `/bible/${translation}/${book}/${chapter}/${verse}`;
-      const response = await this.request<BibleApiResponse>(endpoint);
-      return response;
-    } catch (error) {
-      console.error(`Failed to fetch verse ${book} ${chapter}:${verse}:`, error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
+  async getVerse(translation: string, book: string, chapter: number, verse: number) {
+    const url = `${BIBLE_API_BASE}/${encodeURIComponent(book)}/${chapter}/${verse}?translation=${translation}`;
+    console.log('📡 Fetching verse:', url);
+  
+    const response = await fetch(url);
+    const data = await response.json();
+    return data;
   }
 
   /**

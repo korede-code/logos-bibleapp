@@ -409,6 +409,45 @@ app.get('/api/bible/:translation/:book/:chapter/:verse', async (req, res) => {
   }
 });
 
+// Bible API proxy
+app.get('/api/bible/:book/:chapter', async (req, res) => {
+  try {
+    const { book, chapter } = req.params;
+    const translation = req.query.translation || 'kjv';
+    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
+    
+    console.log('📖 Fetching Bible:', url);
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Bible API returned ${response.status}`);
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error('Bible API error:', error.message);
+    res.status(500).json({ error: 'Failed to fetch Bible content' });
+  }
+});
+
+// Also proxy individual verses
+app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
+  try {
+    const { book, chapter, verse } = req.params;
+    const translation = req.query.translation || 'kjv';
+    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}:${verse}?translation=${translation}`;
+    
+    console.log('📖 Fetching verse:', url);
+    
+    const response = await fetch(url);
+    if (!response.ok) throw new Error(`Bible API returned ${response.status}`);
+    
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to fetch verse' });
+  }
+});
+
 // ============ SEARCH ============
 app.get('/api/bible/search', (req, res) => {
   const { q, translation = 'KJV' } = req.query;
