@@ -100,7 +100,6 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         throw new Error('Please sign in to upgrade to Pro');
       }
 
-      // Save for callback
       localStorage.setItem('pendingProUserId', currentUserId || '');
       localStorage.setItem('pendingProPlan', selectedPlan.id);
 
@@ -124,15 +123,14 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
         throw new Error(data.error || 'Payment initialization failed');
       }
 
-      // Get the payment URL (Paystack checkout page)
       const paymentUrl = data.paymentUrl || data.authorization_url;
 
       if (paymentUrl) {
-        // Redirect to Paystack to complete payment
-        console.log('🔗 Redirecting to:', paymentUrl);
+        // Redirect to Paystack checkout
+        console.log('🔗 Redirecting to Paystack:', paymentUrl);
         window.location.href = paymentUrl;
       } else {
-        throw new Error('No payment URL received from server');
+        throw new Error('No payment URL received');
       }
 
     } catch (err: any) {
@@ -141,7 +139,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       setProcessing(false);
     }
   };
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
       <div
