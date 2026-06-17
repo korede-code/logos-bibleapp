@@ -274,6 +274,103 @@ app.get('/api/bible/votd', (req, res) => {
 });
 
 // ===== GET CHAPTER - WITH REAL BIBLE CONTENT ========
+// backend/server.js - Complete working chapter endpoint
+
+// ============ BUILT-IN BIBLE CONTENT (Fallback) ============
+const BIBLE_CONTENT = {
+  'John': {
+    3: {
+      1: 'There was a man of the Pharisees, named Nicodemus, a ruler of the Jews:',
+      2: 'The same came to Jesus by night, and said unto him, Rabbi, we know that thou art a teacher come from God: for no man can do these miracles that thou doest, except God be with him.',
+      3: 'Jesus answered and said unto him, Verily, verily, I say unto thee, Except a man be born again, he cannot see the kingdom of God.',
+      4: 'Nicodemus saith unto him, How can a man be born when he is old? can he enter the second time into his mother\'s womb, and be born?',
+      5: 'Jesus answered, Verily, verily, I say unto thee, Except a man be born of water and of the Spirit, he cannot enter into the kingdom of God.',
+      6: 'That which is born of the flesh is flesh; and that which is born of the Spirit is spirit.',
+      7: 'Marvel not that I said unto thee, Ye must be born again.',
+      8: 'The wind bloweth where it listeth, and thou hearest the sound thereof, but canst not tell whence it cometh, and whither it goeth: so is every one that is born of the Spirit.',
+      9: 'Nicodemus answered and said unto him, How can these things be?',
+      10: 'Jesus answered and said unto him, Art thou a master of Israel, and knowest not these things?',
+      11: 'Verily, verily, I say unto thee, We speak that we do know, and testify that we have seen; and ye receive not our witness.',
+      12: 'If I have told you earthly things, and ye believe not, how shall ye believe, if I tell you of heavenly things?',
+      13: 'And no man hath ascended up to heaven, but he that came down from heaven, even the Son of man which is in heaven.',
+      14: 'And as Moses lifted up the serpent in the wilderness, even so must the Son of man be lifted up:',
+      15: 'That whosoever believeth in him should not perish, but have eternal life.',
+      16: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
+      17: 'For God sent not his Son into the world to condemn the world; but that the world through him might be saved.',
+      18: 'He that believeth on him is not condemned: but he that believeth not is condemned already, because he hath not believed in the name of the only begotten Son of God.',
+      19: 'And this is the condemnation, that light is come into the world, and men loved darkness rather than light, because their deeds were evil.',
+      20: 'For every one that doeth evil hateth the light, neither cometh to the light, lest his deeds should be reproved.',
+      21: 'But he that doeth truth cometh to the light, that his deeds may be made manifest, that they are wrought in God.'
+    },
+    14: {
+      1: 'Let not your heart be troubled: ye believe in God, believe also in me.',
+      2: 'In my Father\'s house are many mansions: if it were not so, I would have told you. I go to prepare a place for you.',
+      3: 'And if I go and prepare a place for you, I will come again, and receive you unto myself; that where I am, there ye may be also.',
+      4: 'And whither I go ye know, and the way ye know.',
+      5: 'Thomas saith unto him, Lord, we know not whither thou goest; and how can we know the way?',
+      6: 'Jesus saith unto him, I am the way, the truth, and the life: no man cometh unto the Father, but by me.',
+      7: 'If ye had known me, ye should have known my Father also: and from henceforth ye know him, and have seen him.',
+      8: 'Philip saith unto him, Lord, shew us the Father, and it sufficeth us.',
+      9: 'Jesus saith unto him, Have I been so long time with you, and yet hast thou not known me, Philip? he that hath seen me hath seen the Father; and how sayest thou then, Shew us the Father?',
+      10: 'Believest thou not that I am in the Father, and the Father in me? the words that I speak unto you I speak not of myself: but the Father that dwelleth in me, he doeth the works.',
+      11: 'Believe me that I am in the Father, and the Father in me: or else believe me for the very works\' sake.',
+      12: 'Verily, verily, I say unto you, He that believeth on me, the works that I do shall he do also; and greater works than these shall he do; because I go unto my Father.',
+      13: 'And whatsoever ye shall ask in my name, that will I do, that the Father may be glorified in the Son.',
+      14: 'If ye shall ask any thing in my name, I will do it.',
+      15: 'If ye love me, keep my commandments.',
+      16: 'And I will pray the Father, and he shall give you another Comforter, that he may abide with you for ever;',
+      17: 'Even the Spirit of truth; whom the world cannot receive, because it seeth him not, neither knoweth him: but ye know him; for he dwelleth with you, and shall be in you.',
+      18: 'I will not leave you comfortless: I will come to you.',
+      19: 'Yet a little while, and the world seeth me no more; but ye see me: because I live, ye shall live also.',
+      20: 'At that day ye shall know that I am in my Father, and ye in me, and I in you.',
+      21: 'He that hath my commandments, and keepeth them, he it is that loveth me: and he that loveth me shall be loved of my Father, and I will love him, and will manifest myself to him.'
+    }
+  },
+  'Exodus': {
+    3: {
+      1: 'Now Moses kept the flock of Jethro his father in law, the priest of Midian: and he led the flock to the backside of the desert, and came to the mountain of God, even to Horeb.',
+      2: 'And the angel of the LORD appeared unto him in a flame of fire out of the midst of a bush: and he looked, and, behold, the bush burned with fire, and the bush was not consumed.',
+      3: 'And Moses said, I will now turn aside, and see this great sight, why the bush is not burnt.',
+      4: 'And when the LORD saw that he turned aside to see, God called unto him out of the midst of the bush, and said, Moses, Moses. And he said, Here am I.',
+      5: 'And he said, Draw not nigh hither: put off thy shoes from off thy feet, for the place whereon thou standest is holy ground.',
+      6: 'Moreover he said, I am the God of thy father, the God of Abraham, the God of Isaac, and the God of Jacob. And Moses hid his face; for he was afraid to look upon God.',
+      7: 'And the LORD said, I have surely seen the affliction of my people which are in Egypt, and have heard their cry by reason of their taskmasters; for I know their sorrows;'
+    }
+  },
+  'Genesis': {
+    1: {
+      1: 'In the beginning God created the heaven and the earth.',
+      2: 'And the earth was without form, and void; and darkness was upon the face of the deep. And the Spirit of God moved upon the face of the waters.',
+      3: 'And God said, Let there be light: and there was light.',
+      4: 'And God saw the light, that it was good: and God divided the light from the darkness.',
+      5: 'And God called the light Day, and the darkness he called Night. And the evening and the morning were the first day.'
+    }
+  },
+  'Psalms': {
+    23: {
+      1: 'The LORD is my shepherd; I shall not want.',
+      2: 'He maketh me to lie down in green pastures: he leadeth me beside the still waters.',
+      3: 'He restoreth my soul: he leadeth me in the paths of righteousness for his name\'s sake.',
+      4: 'Yea, though I walk through the valley of the shadow of death, I will fear no evil: for thou art with me; thy rod and thy staff they comfort me.',
+      5: 'Thou preparest a table before me in the presence of mine enemies: thou anointest my head with oil; my cup runneth over.',
+      6: 'Surely goodness and mercy shall follow me all the days of my life: and I will dwell in the house of the LORD for ever.'
+    }
+  },
+  'Matthew': {
+    5: {
+      3: 'Blessed are the poor in spirit: for theirs is the kingdom of heaven.',
+      4: 'Blessed are they that mourn: for they shall be comforted.',
+      5: 'Blessed are the meek: for they shall inherit the earth.',
+      6: 'Blessed are they which do hunger and thirst after righteousness: for they shall be filled.',
+      7: 'Blessed are the merciful: for they shall obtain mercy.',
+      8: 'Blessed are the pure in heart: for they shall see God.',
+      9: 'Blessed are the peacemakers: for they shall be called the children of God.',
+      10: 'Blessed are they which are persecuted for righteousness\' sake: for theirs is the kingdom of heaven.'
+    }
+  }
+};
+
+// ============ GET CHAPTER ENDPOINT ============
 app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   const { translation, book, chapter } = req.params;
   const translationUpper = translation.toUpperCase();
@@ -282,7 +379,21 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   
   console.log(`📖 Chapter requested: ${translationUpper}/${bookName}/${chapterNum}`);
   
-  // Map of translation codes to API parameters
+  // 1. Check built-in content first
+  const builtIn = BIBLE_CONTENT[bookName]?.[chapterNum];
+  if (builtIn) {
+    const verses = Object.keys(builtIn).map(verseNum => ({
+      book: bookName,
+      chapter: chapterNum,
+      verse: parseInt(verseNum),
+      text: builtIn[verseNum],
+      translation: translationUpper
+    }));
+    console.log(`  ✅ Built-in content: ${verses.length} verses`);
+    return res.json({ success: true, data: verses, source: 'built-in' });
+  }
+  
+  // 2. Try API for other books
   const translationMap = {
     'KJV': 'kjv',
     'ASV': 'asv',
@@ -301,11 +412,10 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   const apiTranslation = translationMap[translationUpper] || 'kjv';
   
   try {
-    // Try to fetch from free Bible API (supports many translations)
     const url = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=${apiTranslation}`;
-    console.log(`  Fetching: ${url}`);
+    console.log(`  Trying API: ${url}`);
     
-    const response = await axios.get(url, { timeout: 10000 });
+    const response = await axios.get(url, { timeout: 8000 });
     
     if (response.data && response.data.verses) {
       const verses = response.data.verses.map(v => ({
@@ -315,63 +425,28 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
         text: v.text,
         translation: translationUpper
       }));
-      console.log(`  ✅ Found ${verses.length} verses for ${translationUpper}`);
-      return res.json({ success: true, data: verses });
+      console.log(`  ✅ API: ${verses.length} verses`);
+      return res.json({ success: true, data: verses, source: 'api' });
     }
-    throw new Error('No verses returned');
   } catch (error) {
-    console.log(`  ❌ API error for ${translationUpper}: ${error.message}`);
-    
-    // For Pro translations, show upgrade message
-    const isProTranslation = ['NIV', 'NLT', 'ESV', 'NASB', 'CSB', 'NKJV'].includes(translationUpper);
-    
-    if (isProTranslation) {
-      const verses = [];
-      for (let i = 1; i <= 30; i++) {
-        verses.push({
-          book: bookName,
-          chapter: chapterNum,
-          verse: i,
-          text: `[${translationUpper}] This translation requires a Pro subscription. Upgrade to access ${translationUpper} content.`,
-          translation: translationUpper
-        });
-      }
-      return res.json({ success: true, data: verses, requiresPro: true });
-    }
-    
-    // Fallback to KJV for free translations
-    try {
-      const fallbackUrl = `https://bible-api.com/${encodeURIComponent(bookName)}%20${chapterNum}?translation=kjv`;
-      const fallbackResponse = await axios.get(fallbackUrl, { timeout: 10000 });
-      
-      if (fallbackResponse.data && fallbackResponse.data.verses) {
-        const verses = fallbackResponse.data.verses.map(v => ({
-          book: bookName,
-          chapter: chapterNum,
-          verse: v.verse,
-          text: v.text,
-          translation: 'KJV (Fallback)'
-        }));
-        return res.json({ success: true, data: verses, fallback: true });
-      }
-    } catch (fallbackError) {
-      console.log('Fallback also failed');
-    }
-    
-    // Ultimate fallback
-    const verses = [];
-    for (let i = 1; i <= 30; i++) {
-      verses.push({
-        book: bookName,
-        chapter: chapterNum,
-        verse: i,
-        text: `${bookName} ${chapterNum}:${i}`,
-        translation: translationUpper
-      });
-    }
-    res.json({ success: true, data: verses });
+    console.log(`  ❌ API failed: ${error.message}`);
   }
+  
+  // 3. Fallback - Generic text
+  console.log(`  ⚠️ No content available, using fallback`);
+  const verses = [];
+  for (let i = 1; i <= 30; i++) {
+    verses.push({
+      book: bookName,
+      chapter: chapterNum,
+      verse: i,
+      text: `${bookName} ${chapterNum}:${i}`,
+      translation: translationUpper
+    });
+  }
+  res.json({ success: true, data: verses, source: 'fallback' });
 });
+
 // ============ GET SINGLE VERSE ============
 app.get('/api/bible/:translation/:book/:chapter/:verse', async (req, res) => {
   const { translation, book, chapter, verse } = req.params;
