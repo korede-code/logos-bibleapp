@@ -343,7 +343,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     'NKJV': 'nkjv'
   };
   
-  const apiTranslation = translationMap[translationUpper] || 'kjv';
+  //const apiTranslation = translationMap[translationUpper] || 'kjv';
   
  // Get verse
 app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
