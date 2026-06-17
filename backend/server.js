@@ -284,11 +284,12 @@ app.get('/api/bible/votd', (req, res) => {
 
 // ============ GET CHAPTER ENDPOINT ============
 
-app.get('/api/bible/:book/:chapter', async (req, res) => {
+// Match /api/bible/KJV/John/3 format (with translation)
+app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   try {
-    const { book, chapter } = req.params;
-    const translation = req.query.translation || 'kjv';
-    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
+    const { translation, book, chapter } = req.params;
+    const trans = translation.toLowerCase();
+    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${trans}`;
     
     console.log('📖 Fetching:', url);
     
@@ -313,7 +314,8 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     }
   } catch (error) {
     console.error('Bible fetch error:', error.message);
-    // Return fallback
+    // Return fallback verses
+    const { book, chapter, translation } = req.params;
     const verses = [];
     for (let i = 1; i <= 30; i++) {
       verses.push({
@@ -324,7 +326,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     }
     res.json({ success: true, data: verses, source: 'fallback' });
   }
-});  
+}); 
   
 
   // 2. Try API for other books
@@ -343,7 +345,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     'NKJV': 'nkjv'
   };
   
-  const apiTranslation = translationMap[translationUpper] || 'kjv';
+  //const apiTranslation = translationMap[translationUpper] || 'kjv';
   
  // Get verse
 app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
