@@ -41,14 +41,27 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     getRedirectResult(auth).then((result) => {
       if (result?.user) {
         handleAuthSuccess(result.user);
+        if (onSuccess) onSuccess(result.user);
       }
     }).catch((error) => {
       console.error('Redirect sign-in error:', error);
-      setError(error.message);
+      //setError(error.message);
     });
   }, []);
 
   if (!isOpen) return null;
+
+  const handleAuthSuccess = (user: any) => {
+    if (!user) return;
+    const userData = {
+      uid: user.uid,
+      email: user.email || '',
+      displayName: user.displayName || '',
+      photoURL: user.photoURL || '',
+    };
+    localStorage.setItem('logos_user', JSON.stringify(userData));
+    console.log('Auth success', userData);
+  };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -69,10 +82,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
         // On web, use popup
         const result = await signInWithPopup(auth, provider);
         handleAuthSuccess(result.user);
+        if (onSuccess) onSuccess(result.user);
+        onClose();
       }
     } catch (err: any) {
       console.error('Sign in error:', err);
       setError(err.message || 'Failed to sign in');
+    } finally {
       setLoading(false);
     }
   };
@@ -83,51 +99,24 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     setError('');
     
     try {
+      let result;
+      
       if (mode === 'signup') {
-        const result = await signUpWithEmail(email, password, displayName);
-        console.log('Sign up result:', result);
-        
-        if (result.success && result.user) {
-          // Save user to localStorage
-          const userData = {
-            uid: result.user.uid,
-            email: result.user.email,
-            displayName: result.user.displayName,
-            photoURL: result.user.photoURL
-          };
-          localStorage.setItem('logos_user', JSON.stringify(userData));
-          
-          if (onSuccess) {
-            onSuccess(result.user);
-          }
-          showToast(`Welcome ${displayName || email}!`, '#4CAF50');
-          onClose();
-        } else {
-          setError(result.error || 'Sign up failed');
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        if (displayName) {
+          await updateProfile(userCredential.user, { displayName });
         }
-      } 
-      else if (mode === 'signin') {
-        const result = await signInWithEmail(email, password);
-        console.log('Sign in result:', result);
-        
-        if (result.success && result.user) {
-          // Save user to localStorage
-          const userData = {
-            uid: result.user.uid,
-            email: result.user.email,
-            displayName: result.user.displayName,
-            photoURL: result.user.photoURL
-          };
-          localStorage.setItem('logos_user', JSON.stringify(userData));
-          
-          if (onSuccess) {
-            onSuccess(result.user);
-          }
-          showToast(`Welcome back!`, '#4CAF50');
-          onClose();
-        } else {
-          setError(result.error || 'Sign in failed');
-        }
+        result = { success: true, user: userCredential.user };
+      } else {
+        const userCredential = await signInWithEmailAndPassword(auth, email, password);
+        result = { success: true, user: userCredential.user };
+      }
+      
+      if (result.success && result.user) {
+        handleAuthSuccess(result.user);
+        if (onSuccess) onSuccess(result.user);
+        showToast(mode === 'signup' ? `Welcome ${displayName || email}!` : 'Welcome back!', '#4CAF50');
+        onClose();
       }
     } catch (err: any) {
       console.error('Auth error:', err);
@@ -135,7 +124,9 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     } finally {
       setLoading(false);
     }
-  };
+  };      
+      
+
 
   
   const showToast = (message: string, bgColor: string) => {

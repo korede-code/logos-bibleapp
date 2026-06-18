@@ -115,6 +115,7 @@ export function useBibleChapter(
   const [fromCache, setFromCache] = useState(false);
 
   const fetchData = useCallback(async () => {
+    console.log(`📖 useBibleChapter: Fetching ${book} ${chapter} (${translation})`);
     setIsLoading(true);
     setError(null);
     setProgress(0);
@@ -124,7 +125,9 @@ export function useBibleChapter(
       await fetchChapter(translation, book, chapter);
       setProgress(100);
       setFromCache(false);
+      console.log(`📖 useBibleChapter: Fetch complete`);
     } catch (err) {
+      console.error('❌ useBibleChapter: Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch chapter');
     } finally {
       setIsLoading(false);
@@ -163,7 +166,7 @@ export function useBibleSearch(): UseBibleSearchResult {
     
     try {
       await searchBible(query);
-      setHasMore(false); // API doesn't support pagination yet
+      setHasMore(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
     } finally {

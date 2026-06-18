@@ -177,25 +177,36 @@ app.get('/api/payments/pro-status/:userId', (req, res) => {
 //});
 
 // Webhook
+// Webhook - Make sure this is working
 app.post('/api/payments/webhook', (req, res) => {
   const event = req.body;
-  console.log('📨 Webhook:', event.event);
+  console.log('📨 Webhook received:', JSON.stringify(event));
 
   if (event.event === 'charge.success') {
     const userId = event.data?.metadata?.userId;
     const reference = event.data?.reference;
     
-    if (userId && reference) {
+    console.log('💰 Payment successful!');
+    console.log('   User ID:', userId);
+    console.log('   Reference:', reference);
+    
+    if (userId) {
       const data = readUsers();
       data.users[userId] = {
         isPro: true,
         proSince: new Date().toISOString(),
         lastPaymentRef: reference,
+        plan: event.data?.metadata?.plan || 'monthly',
+        amount: event.data?.amount,
+        email: event.data?.customer?.email,
       };
       writeUsers(data);
-      console.log('✅ Pro activated via webhook for:', userId);
+      console.log('✅ Pro activated for:', userId);
+    } else {
+      console.error('❌ No userId in webhook metadata');
     }
   }
+  
   res.sendStatus(200);
 });
 

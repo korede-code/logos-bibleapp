@@ -1,13 +1,12 @@
 // src/App.tsx
 import React, { useEffect, useState } from 'react';
 import { useAppStore } from './store/appStore';
-import { onAuthChange, getUserData } from './config/firebase';
+import { onAuthChange } from './config/firebase';
 import HomeScreen from './components/HomeScreen';
 import ReaderScreen from './components/ReaderScreen';
 import SearchScreen from './components/SearchScreen';
 import ReadingPlansScreen from './components/ReadingPlansScreen';
 import NotesScreen from './components/NotesScreen';
-import PaymentCallback from './components/PaymentCallback';
 import PrayerScreen from './components/PrayerScreen';
 import ProgressScreen from './components/ProgressScreen';
 import BookmarksScreen from './components/BookmarksScreen';
@@ -27,94 +26,90 @@ const SCREENS: Record<string, React.ComponentType> = {
   bookmarks: BookmarksScreen,
   groups: GroupsScreen,
   settings: SettingsScreen,
-  'payment-callback': PaymentCallback,
 };
 
 const App: React.FC = () => {
-  const { currentScreen, readerSettings, setCurrentUser, setProStatus } = useAppStore();
+  const { currentScreen, readerSettings } = useAppStore();
   const theme = getTheme(readerSettings.theme);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // ✅ Start as false, not true
 
-  // In App.tsx - Update the auth listener
   useEffect(() => {
     const unsubscribe = onAuthChange(async (user) => {
       console.log('App: Auth state changed', user?.email);
-      
+    
       if (user) {
+        // Save user immediately (don't wait for backend)
+        localStorage.setItem('logos_user', JSON.stringify({
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName,
+          photoURL: user.photoURL,
+        }));
+      
+        // Check localStorage first (instant)
+        const savedPro = localStorage.getItem(`isPro_${user.uid}`);
+        if (savedPro !== null) {
+          useAppStore.getState().setProStatus(savedPro === 'true');
+        }
+      
+        // Try backend with timeout (don't block)
         try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+        
           const response = await fetch(
-          `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`
+            `https://logos-daily-backend.onrender.com/api/payments/pro-status/${user.uid}`,
+            { signal: controller.signal }
           );
+          clearTimeout(timeout);
+        
           const data = await response.json();
-          console.log('🌟 Pro status from Backend:', data.isPro);
-
           if (data.isPro) {
             useAppStore.getState().setProStatus(true);
             localStorage.setItem(`isPro_${user.uid}`, 'true');
             localStorage.setItem('logos_daily_pro', 'true');
           }
-        } catch (error) {
-          // Fallback to localStorage
-          const savedPro = localStorage.getItem(`isPro_${user.uid}`) === 'true';
-          useAppStore.getState().setProStatus(savedPro);
+        } catch (e) {
+          console.log('Backend check skipped (timeout or offline)');
         }
-      
-      } else {
-        setCurrentUser(null);
-        setProStatus(false);
       }
-      setLoading(false);
     });
-    
-    return () => unsubscribe();
-  }, [setCurrentUser, setProStatus]);
-
-  // In App.tsx
-
-  // Check if current URL is payment success
-  useEffect(() => {
-    const path = window.location.pathname;
-    const isPaymentCallback = window.location.pathname === '/payment-success' || 
-                            window.location.search.includes('reference=') ||
-                            window.location.search.includes('trxref=');
   
-    if (isPaymentCallback) {
-      // Handle payment callback
-      useAppStore.getState().navigate('payment-callback' as any);
-      const urlParams = new URLSearchParams(window.location.search);
-      const reference = urlParams.get('reference') || urlParams.get('trxref');
+    return () => unsubscribe();
+  }, []);
+
+
+  // In App.tsx or PaymentCallback.tsx
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const reference = params.get('reference');
+    const trxref = params.get('trxref');
+    const paymentRef = reference || trxref;
+  
+    if (paymentRef && paymentRef.startsWith('LOGOS_')) {
+      console.log('🔍 Verifying payment:', paymentRef);
     
-      if (reference) {
-        // Verify payment
-        fetch(`https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`)
+      fetch(`https://logos-daily-backend.onrender.com/api/payments/verify/${paymentRef}`)
         .then(r => r.json())
         .then(data => {
-          if (data.success) {
+          console.log('Verification result:', data);
+          if (data.success && data.verified) {
             const userId = localStorage.getItem('pendingProUserId');
             if (userId) {
               localStorage.setItem(`isPro_${userId}`, 'true');
               localStorage.setItem('logos_daily_pro', 'true');
               localStorage.removeItem('pendingProUserId');
+              localStorage.removeItem('pendingProPlan');
             }
             useAppStore.getState().setProStatus(true);
           }
-          // Redirect to settings
-          window.location.href = '/';
-        });
-      }
+        })
+        .catch(console.error);
     }
   }, []);
 
   const ActiveScreen = SCREENS[currentScreen] ?? HomeScreen;
   const hideNav = readerSettings.focusMode && currentScreen === 'reader';
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-screen" style={{ backgroundColor: theme.bg }}>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: theme.accent }} />
-      </div>
-    );
-  }
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: theme.bg }}>

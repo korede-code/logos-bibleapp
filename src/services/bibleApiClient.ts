@@ -6,22 +6,12 @@
  */
 
 // Configuration
-
-// Ensure TypeScript knows about import.meta.env (Vite)
-declare global {
-  interface ImportMeta {
-    readonly env: {
-      readonly VITE_API_URL?: string;
-      // add other env vars here if needed
-      [key: string]: unknown;
-    };
-  }
-}
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api/bible';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
+
+console.log('🔧 Bible API Client initialized with URL:', API_BASE_URL);
 
 // Types
 export interface BibleVerse {
@@ -29,6 +19,7 @@ export interface BibleVerse {
   chapter: number;
   verse: number;
   text: string;
+  translation?: string;
 }
 
 export interface BibleApiResponse {
@@ -177,14 +168,13 @@ class BibleApiClient {
    */
   async getVerseOfTheDay(random: boolean = false) {
     try {
-      // Add timestamp to prevent caching
       const timestamp = Date.now();
       const url = random 
         ? `/bible/votd?random=true&_=${timestamp}` 
         : `/bible/votd?_=${timestamp}`;
       
       console.log(`📡 Fetching VOTD from: ${url}`);
-      const response = await this.request(url, {}, false); // Force no cache
+      const response = await this.request(url, {}, false);
       console.log(`📥 VOTD response:`, response);
       return response;
     } catch (error) {
@@ -200,27 +190,34 @@ class BibleApiClient {
     }
   }
 
-  // src/services/bibleApiClient.ts
-
-  // Change from bible-api.com to your Render backend
-  //const BIBLE_API_BASE = 'https://logos-daily-backend.onrender.com/api/bible';
-
+  /**
+   * Get a Bible chapter
+   */
   async getChapter(translation: string, book: string, chapter: number) {
-    const url = `${BIBLE_API_BASE}/${encodeURIComponent(book)}/${chapter}?translation=${translation}`;
-    console.log('📡 Fetching chapter:', url);
-  
-    const response = await fetch(url);
-    const data = await response.json();
-    return data;
+    try {
+      const endpoint = `/bible/${translation}/${book}/${chapter}`;
+      console.log(`📡 Fetching chapter: ${endpoint}`);
+      const response = await this.request(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Failed to fetch chapter:', error);
+      return { success: false, error: 'Failed to fetch chapter' };
+    }
   }
 
+  /**
+   * Get a specific verse
+   */
   async getVerse(translation: string, book: string, chapter: number, verse: number) {
-    const url = `${BIBLE_API_BASE}/${encodeURIComponent(book)}/${chapter}/${verse}?translation=${translation}`;
-    console.log('📡 Fetching verse:', url);
-  
-    const response = await fetch(url);
-    const data = await response.json();
-    return data;
+    try {
+      const endpoint = `/bible/${translation}/${book}/${chapter}/${verse}`;
+      console.log(`📡 Fetching verse: ${endpoint}`);
+      const response = await this.request(endpoint);
+      return response;
+    } catch (error) {
+      console.error('Failed to fetch verse:', error);
+      return { success: false, error: 'Failed to fetch verse' };
+    }
   }
 
   /**

@@ -26,7 +26,9 @@ const SettingsScreen: React.FC = () => {
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [isPro, setIsPro] = useState(false);
-  const [loading, setLoading] = useState(true);
+  //const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // ✅ Start as false
+
 
   const updateProStatus = (status: boolean, uid?: string) => {
     updateStoreProStatus(status);
@@ -72,17 +74,13 @@ const SettingsScreen: React.FC = () => {
         }
       }
       
-      setLoading(false);
+      //setLoading(false);
     });
     
     return () => unsubscribe();
   }, []);
 
-  // Safety timeout
-  useEffect(() => {
-    const timeout = setTimeout(() => setLoading(false), 5000);
-    return () => clearTimeout(timeout);
-  }, []);
+  
 
   const handleSignOut = async () => {
     const result = await logoutUser();
@@ -110,13 +108,7 @@ const SettingsScreen: React.FC = () => {
     setTimeout(() => toast.remove(), 3000);
   };
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full" style={{ backgroundColor: theme.bg }}>
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2" style={{ borderColor: theme.accent }} />
-      </div>
-    );
-  }
+  
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: theme.bg }}>

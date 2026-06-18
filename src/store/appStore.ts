@@ -811,16 +811,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  fetchChapter: async (translation, book, chapter) => {
+  // In appStore.ts - Check this function
+  fetchChapter: async (translation: string, book: string, chapter: number) => {
+    console.log(`📖 Store: fetchChapter called for ${translation}/${book}/${chapter}`);
     set({ isApiLoading: true, apiError: null });
-    
+  
     const cacheKey = `${translation}:${book}:${chapter}`;
     const cached = localStorage.getItem(`chapter_${cacheKey}`);
-    
+  
     if (cached) {
       try {
         const cachedData = JSON.parse(cached);
         if (Date.now() - cachedData.timestamp < 24 * 60 * 60 * 1000) {
+          console.log(`📦 Store: Cache hit for ${cacheKey}`);
           set({ currentChapterVerses: cachedData.data, isApiLoading: false });
           return;
         }
@@ -828,36 +831,52 @@ export const useAppStore = create<AppState>((set, get) => ({
         console.error('Failed to parse cached chapter', e);
       }
     }
-    
+  
     try {
+      console.log(`📡 Store: Fetching from API: ${translation}/${book}/${chapter}`);
       const response = await bibleApi.getChapter(translation, book, chapter);
-      
+      console.log(`📥 Store: API Response:`, response);
+    
       if (response.success && response.data) {
-        const verses: RealVerse[] = response.data.map((v: any) => ({
-          reference: `${v.book} ${v.chapter}:${v.verse}`,
-          text: v.text,
-          translation: translation,
-          book: v.book,
-          chapter: v.chapter,
-          verse: v.verse
-        }));
+      // Log the data structure
+        console.log(`📥 Store: Data structure:`, {
+          type: typeof response.data,
+          isArray: Array.isArray(response.data),
+          length: response.data.length,
+          firstItem: response.data[0]
+        });
+      
+        // Ensure we have valid verses
+        let verses = response.data;
+      
+        // If data is an array, use it directly
+        if (Array.isArray(verses) && verses.length > 0) {
+          const formattedVerses = verses.map((v: any) => ({
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            text: v.text,
+            translation: translation,
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse
+          }));
         
-        localStorage.setItem(`chapter_${cacheKey}`, JSON.stringify({
-          data: verses,
-          timestamp: Date.now()
-        }));
+          console.log(`✅ Store: Formatted ${formattedVerses.length} verses`);
         
-        set({ currentChapterVerses: verses, isApiLoading: false });
+          localStorage.setItem(`chapter_${cacheKey}`, JSON.stringify({
+            data: formattedVerses,
+            timestamp: Date.now()
+          }));
         
-        const currentPos = get().readingPosition;
-        if (currentPos.book !== book || currentPos.chapter !== chapter) {
-          set({ readingPosition: { ...currentPos, book, chapter, verse: 1, timestamp: Date.now() } });
+          set({ currentChapterVerses: formattedVerses, isApiLoading: false });
+        } else {
+          console.warn('⚠️ Store: No verses in response');
+          set({ currentChapterVerses: [], isApiLoading: false });
         }
       } else {
         throw new Error(response.error || 'Failed to fetch chapter');
       }
     } catch (error) {
-      console.error('Failed to fetch chapter:', error);
+      console.error('❌ Store: Failed to fetch chapter:', error);
       set({ 
         apiError: `Unable to load ${book} ${chapter}`,
         isApiLoading: false 

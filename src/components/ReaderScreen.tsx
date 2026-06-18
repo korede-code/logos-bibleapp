@@ -457,6 +457,26 @@ const ReaderScreen: React.FC = () => {
     readingPosition.translation || readerSettings.translation
   );
 
+  // Debug logs
+  useEffect(() => {
+    console.log('📖 ReaderScreen: apiVerses state:', {
+      type: typeof apiVerses,
+      isArray: Array.isArray(apiVerses),
+      length: apiVerses?.length,
+      firstVerse: apiVerses?.[0],
+      allVerses: apiVerses
+    });
+  }, [apiVerses]);
+
+  useEffect(() => {
+    console.log('📖 ReaderScreen: isLoading:', isLoading);
+  }, [isLoading]);
+
+  useEffect(() => {
+    console.log('📖 ReaderScreen: error:', error);
+  }, [error]);
+
+
   const theme = getTheme(readerSettings.theme);
   const [showSettings, setShowSettings] = useState(false);
   const [showBookNav, setShowBookNav] = useState(false);
