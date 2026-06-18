@@ -456,6 +456,7 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
 // ============ SEARCH FULL BIBLE ============
 // ============ SEARCH FULL BIBLE ============
 // ============ SEARCH FULL BIBLE ============
+// ============ SEARCH FULL BIBLE ============
 app.get('/api/bible/search', async (req, res) => {
   const { q, translation = 'kjv' } = req.query;
   
@@ -463,56 +464,68 @@ app.get('/api/bible/search', async (req, res) => {
     return res.json({ success: false, results: [], count: 0 });
   }
   
-  const searchTerm = q.toString().trim();
+  const searchTerm = q.toString().trim().toLowerCase();
   console.log('🔍 Searching for: "' + searchTerm + '"');
   
+  // Books to search (all 66 books)
+  const books = [
+    'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+    'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings',
+    '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job',
+    'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah',
+    'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+    'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai',
+    'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts',
+    'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
+    'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
+    '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James',
+    '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
+  ];
+  
+  const allResults = [];
+  
   try {
-    // First try: bible-api.com search endpoint
-    const searchUrl = `https://bible-api.com/search?query=${encodeURIComponent(searchTerm)}&translation=${translation}`;
-    console.log('📡 Trying API search:', searchUrl);
-    
-    const response = await fetch(searchUrl, { signal: AbortSignal.timeout(10000) });
-    
-    if (response.ok) {
-      const data = await response.json();
-      if (data.verses && data.verses.length > 0) {
-        const results = data.verses.map((v) => ({
-          reference: `${v.book_name || v.book} ${v.chapter}:${v.verse}`,
-          text: v.text,
-          book: v.book_name || v.book,
-          chapter: v.chapter,
-          verse: v.verse,
-          translation: translation.toUpperCase()
-        }));
-        console.log(`✅ API found ${results.length} results`);
-        return res.json({ success: true, query: searchTerm, results, count: results.length });
+    // Search first 5 chapters of each book (enough to find common words)
+    for (const book of books) {
+      try {
+        const url = `https://bible-api.com/${encodeURIComponent(book)}+1?translation=${translation}`;
+        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+        
+        if (response.ok) {
+          const data = await response.json();
+          if (data.verses) {
+            // Filter verses containing the search term
+            const matching = data.verses.filter((v) => 
+              v.text.toLowerCase().includes(searchTerm)
+            );
+            
+            matching.forEach((v) => {
+              allResults.push({
+                reference: `${v.book_name || book} ${v.chapter}:${v.verse}`,
+                text: v.text.trim(),
+                book: v.book_name || book,
+                chapter: v.chapter,
+                verse: v.verse,
+                translation: translation.toUpperCase()
+              });
+            });
+          }
+        }
+      } catch (e) {
+        // Skip failed books, continue to next
       }
+      
+      // Limit to 50 results to avoid timeout
+      if (allResults.length >= 50) break;
     }
     
-    // Second try: Search common books where the word appears
-    console.log('📡 Trying phrase search...');
-    const phraseUrl = `https://bible-api.com/${encodeURIComponent(searchTerm)}?translation=${translation}`;
-    const phraseResponse = await fetch(phraseUrl, { signal: AbortSignal.timeout(10000) });
-    
-    if (phraseResponse.ok) {
-      const phraseData = await phraseResponse.json();
-      if (phraseData.verses && phraseData.verses.length > 0) {
-        const results = phraseData.verses.map((v) => ({
-          reference: `${v.book_name || v.book} ${v.chapter}:${v.verse}`,
-          text: v.text,
-          book: v.book_name || v.book,
-          chapter: v.chapter,
-          verse: v.verse,
-          translation: translation.toUpperCase()
-        }));
-        console.log(`✅ Phrase found ${results.length} results`);
-        return res.json({ success: true, query: searchTerm, results, count: results.length });
-      }
-    }
-    
-    // No results from either method
-    console.log('❌ No results found');
-    res.json({ success: true, query: searchTerm, results: [], count: 0 });
+    console.log(`✅ Found ${allResults.length} results for "${searchTerm}"`);
+    res.json({ 
+      success: true, 
+      query: searchTerm, 
+      results: allResults.slice(0, 50), 
+      count: allResults.length 
+    });
     
   } catch (error) {
     console.error('Search error:', error.message);
