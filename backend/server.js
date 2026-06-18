@@ -454,6 +454,7 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
 
 // ============ SEARCH ============
 // ============ SEARCH FULL BIBLE ============
+// ============ SEARCH FULL BIBLE ============
 app.get('/api/bible/search', async (req, res) => {
   const { q, translation = 'kjv' } = req.query;
   
@@ -462,49 +463,37 @@ app.get('/api/bible/search', async (req, res) => {
   }
   
   const searchTerm = q.toString().trim();
-  console.log('🔍 Searching full Bible for: "' + searchTerm + '"');
+  console.log('🔍 Searching for: "' + searchTerm + '"');
+  
+  const allResults = [];
+  
+  // Bible books in order
+  const books = [
+    'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
+    'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings',
+    '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job',
+    'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah',
+    'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
+    'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai',
+    'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts',
+    'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
+    'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
+    '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James',
+    '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
+  ];
   
   try {
-    // Search using bible-api.com (searches the ENTIRE Bible)
-    const url = `https://bible-api.com/${encodeURIComponent(searchTerm)}?translation=${translation}`;
-    console.log('📡 API URL:', url);
+    // Search using the bible-api.com search endpoint
+    const searchUrl = `https://bible-api.com/search?query=${encodeURIComponent(searchTerm)}&translation=${translation}`;
+    console.log('📡 Searching:', searchUrl);
     
-    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    const response = await fetch(searchUrl, { signal: AbortSignal.timeout(15000) });
     
     if (response.ok) {
       const data = await response.json();
       
       if (data.verses && data.verses.length > 0) {
         const results = data.verses.map((v) => ({
-          reference: `${v.book_name} ${v.chapter}:${v.verse}`,
-          text: v.text,
-          book: v.book_name,
-          chapter: v.chapter,
-          verse: v.verse,
-          translation: translation.toUpperCase()
-        }));
-        
-        console.log(`✅ Found ${results.length} results`);
-        return res.json({ 
-          success: true, 
-          query: searchTerm, 
-          results, 
-          count: results.length 
-        });
-      }
-    }
-    
-    // If no results from first attempt, try alternative search
-    const altUrl = `https://bible-api.com/search?query=${encodeURIComponent(searchTerm)}`;
-    console.log('📡 Trying alternative:', altUrl);
-    
-    const altResponse = await fetch(altUrl, { signal: AbortSignal.timeout(10000) });
-    
-    if (altResponse.ok) {
-      const altData = await altResponse.json();
-      
-      if (altData.verses && altData.verses.length > 0) {
-        const results = altData.verses.map((v) => ({
           reference: `${v.book_name || v.book} ${v.chapter}:${v.verse}`,
           text: v.text,
           book: v.book_name || v.book,
@@ -513,34 +502,52 @@ app.get('/api/bible/search', async (req, res) => {
           translation: translation.toUpperCase()
         }));
         
-        console.log(`✅ Found ${results.length} results (alternative)`);
-        return res.json({ 
-          success: true, 
-          query: searchTerm, 
-          results, 
-          count: results.length 
-        });
+        console.log(`✅ Found ${results.length} results`);
+        return res.json({ success: true, query: searchTerm, results, count: results.length });
       }
     }
     
-    // No results
-    console.log('❌ No results found');
-    return res.json({ success: true, query: searchTerm, results: [], count: 0 });
+    // If no results, search a few key books as fallback
+    console.log('📡 Trying individual book search...');
+    const keyBooks = ['Psalms', 'Proverbs', 'Matthew', 'John', 'Romans', '1 Corinthians'];
+    
+    for (const book of keyBooks.slice(0, 3)) { // Limit to 3 books
+      try {
+        const bookUrl = `https://bible-api.com/${encodeURIComponent(book)}+1?translation=${translation}`;
+        const bookResponse = await fetch(bookUrl, { signal: AbortSignal.timeout(8000) });
+        
+        if (bookResponse.ok) {
+          const bookData = await bookResponse.json();
+          if (bookData.verses) {
+            const matchingVerses = bookData.verses.filter((v) => 
+              v.text.toLowerCase().includes(searchTerm.toLowerCase())
+            );
+            
+            matchingVerses.forEach((v) => {
+              allResults.push({
+                reference: `${bookData.book_name || book} ${v.chapter}:${v.verse}`,
+                text: v.text,
+                book: bookData.book_name || book,
+                chapter: v.chapter,
+                verse: v.verse,
+                translation: translation.toUpperCase()
+              });
+            });
+          }
+        }
+      } catch (e) {
+        // Skip failed books
+      }
+    }
+    
+    console.log(`✅ Found ${allResults.length} results from book search`);
+    res.json({ success: true, query: searchTerm, results: allResults.slice(0, 50), count: allResults.length });
     
   } catch (error) {
     console.error('Search error:', error.message);
-    
-    // Fallback: return empty results
-    res.json({ 
-      success: true, 
-      query: searchTerm, 
-      results: [], 
-      count: 0,
-      error: 'Search service temporarily unavailable'
-    });
+    res.json({ success: true, query: searchTerm, results: [], count: 0 });
   }
 });
-
 // ============ START SERVER ============
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
