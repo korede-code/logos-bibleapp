@@ -504,7 +504,7 @@ app.get('/api/bible/search', async (req, res) => {
       const altData = await altResponse.json();
       
       if (altData.verses && altData.verses.length > 0) {
-        const results = altData.verses.map((v: any) => ({
+        const results = altData.verses.map((v) => ({
           reference: `${v.book_name || v.book} ${v.chapter}:${v.verse}`,
           text: v.text,
           book: v.book_name || v.book,
