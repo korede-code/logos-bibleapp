@@ -527,7 +527,7 @@ app.get('/api/bible/search', async (req, res) => {
     console.log('❌ No results found');
     return res.json({ success: true, query: searchTerm, results: [], count: 0 });
     
-  } catch (error: any) {
+  } catch (error) {
     console.error('Search error:', error.message);
     
     // Fallback: return empty results
