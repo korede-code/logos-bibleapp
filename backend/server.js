@@ -457,6 +457,7 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
 // ============ SEARCH FULL BIBLE ============
 // ============ SEARCH FULL BIBLE ============
 // ============ SEARCH FULL BIBLE ============
+// ============ SEARCH FULL BIBLE ============
 app.get('/api/bible/search', async (req, res) => {
   const { q, translation = 'kjv' } = req.query;
   
@@ -467,65 +468,75 @@ app.get('/api/bible/search', async (req, res) => {
   const searchTerm = q.toString().trim().toLowerCase();
   console.log('🔍 Searching for: "' + searchTerm + '"');
   
-  // Books to search (all 66 books)
-  const books = [
-    'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-    'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings',
-    '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job',
-    'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah',
-    'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
-    'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai',
-    'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts',
-    'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
-    'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
-    '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James',
-    '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
-  ];
+  // Key books with chapters to search (covers most quoted verses)
+  const booksToSearch = {
+    'Genesis': 5,
+    'Exodus': 3,
+    'Deuteronomy': 3,
+    'Psalms': 10,        // Many famous verses
+    'Proverbs': 5,
+    'Isaiah': 5,
+    'Jeremiah': 3,
+    'Matthew': 10,       // Gospels - lots of Jesus' words
+    'Mark': 5,
+    'Luke': 10,
+    'John': 10,          // "God is love", John 3:16
+    'Acts': 5,
+    'Romans': 8,         // Romans 8:38-39
+    '1 Corinthians': 13, // 1 Cor 13 - Love chapter
+    '2 Corinthians': 5,
+    'Galatians': 5,
+    'Ephesians': 5,
+    'Philippians': 4,
+    'Colossians': 4,
+    '1 Thessalonians': 3,
+    '1 Timothy': 3,
+    'Hebrews': 5,
+    'James': 5,
+    '1 Peter': 5,
+    '1 John': 5,         // 1 John 4 - God is love
+    'Revelation': 3
+  };
   
   const allResults = [];
   
   try {
-    // Search first 5 chapters of each book (enough to find common words)
-    for (const book of books) {
-      try {
-        const url = `https://bible-api.com/${encodeURIComponent(book)}+1?translation=${translation}`;
-        const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.verses) {
-            // Filter verses containing the search term
-            const matching = data.verses.filter((v) => 
-              v.text.toLowerCase().includes(searchTerm)
-            );
-            
-            matching.forEach((v) => {
-              allResults.push({
-                reference: `${v.book_name || book} ${v.chapter}:${v.verse}`,
-                text: v.text.trim(),
-                book: v.book_name || book,
-                chapter: v.chapter,
-                verse: v.verse,
-                translation: translation.toUpperCase()
+    for (const [book, maxChapters] of Object.entries(booksToSearch)) {
+      for (let ch = 1; ch <= maxChapters; ch++) {
+        try {
+          const url = `https://bible-api.com/${encodeURIComponent(book)}+${ch}?translation=${translation}`;
+          const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.verses) {
+              const matching = data.verses.filter((v) => 
+                v.text.toLowerCase().includes(searchTerm)
+              );
+              
+              matching.forEach((v) => {
+                allResults.push({
+                  reference: `${v.book_name || book} ${v.chapter}:${v.verse}`,
+                  text: v.text.trim(),
+                  book: v.book_name || book,
+                  chapter: v.chapter,
+                  verse: v.verse,
+                  translation: translation.toUpperCase()
+                });
               });
-            });
+            }
           }
+        } catch (e) {
+          // Skip failed chapters
         }
-      } catch (e) {
-        // Skip failed books, continue to next
+        
+        if (allResults.length >= 50) break;
       }
-      
-      // Limit to 50 results to avoid timeout
       if (allResults.length >= 50) break;
     }
     
-    console.log(`✅ Found ${allResults.length} results for "${searchTerm}"`);
-    res.json({ 
-      success: true, 
-      query: searchTerm, 
-      results: allResults.slice(0, 50), 
-      count: allResults.length 
-    });
+    console.log(`✅ Found ${allResults.length} results`);
+    res.json({ success: true, query: searchTerm, results: allResults.slice(0, 50), count: allResults.length });
     
   } catch (error) {
     console.error('Search error:', error.message);
