@@ -63,7 +63,7 @@ app.post('/api/payments/initialize', async (req, res) => {
       amount: Math.round(amount * 100), // Convert to kobo
       currency: 'NGN',
       reference: reference,
-      callback_url: 'https://logos-daily.web.app/payment-success',
+      callback_url: 'com.logosdaily.app://payment-success',
       metadata: { userId, plan: planId }
     });
 
@@ -451,38 +451,94 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
   }
 });
 
+
 // ============ SEARCH ============
-app.get('/api/bible/search', (req, res) => {
-  const { q, translation = 'KJV' } = req.query;
-  console.log(`🔍 Search: "${q}"`);
+// ============ SEARCH FULL BIBLE ============
+app.get('/api/bible/search', async (req, res) => {
+  const { q, translation = 'kjv' } = req.query;
   
   if (!q || q.toString().trim().length < 2) {
     return res.json({ success: false, results: [], count: 0 });
   }
   
-  const searchTerm = q.toString().trim().toLowerCase();
-  const results = POPULAR_VERSES.filter(verse => 
-    verse.text.toLowerCase().includes(searchTerm) ||
-    verse.ref.toLowerCase().includes(searchTerm)
-  ).map(verse => {
-    const [book, chapterVerse] = verse.ref.split(' ');
-    const [chapter, verseNum] = chapterVerse.split(':');
-    return {
-      reference: verse.ref,
-      text: verse.text.substring(0, 200),
-      book: book,
-      chapter: parseInt(chapter),
-      verse: parseInt(verseNum) || 1,
-      translation: translation
-    };
-  });
+  const searchTerm = q.toString().trim();
+  console.log('🔍 Searching full Bible for: "' + searchTerm + '"');
   
-  res.json({ 
-    success: true, 
-    query: searchTerm, 
-    results, 
-    count: results.length 
-  });
+  try {
+    // Search using bible-api.com (searches the ENTIRE Bible)
+    const url = `https://bible-api.com/${encodeURIComponent(searchTerm)}?translation=${translation}`;
+    console.log('📡 API URL:', url);
+    
+    const response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+    
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.verses && data.verses.length > 0) {
+        const results = data.verses.map((v: any) => ({
+          reference: `${v.book_name} ${v.chapter}:${v.verse}`,
+          text: v.text,
+          book: v.book_name,
+          chapter: v.chapter,
+          verse: v.verse,
+          translation: translation.toUpperCase()
+        }));
+        
+        console.log(`✅ Found ${results.length} results`);
+        return res.json({ 
+          success: true, 
+          query: searchTerm, 
+          results, 
+          count: results.length 
+        });
+      }
+    }
+    
+    // If no results from first attempt, try alternative search
+    const altUrl = `https://bible-api.com/search?query=${encodeURIComponent(searchTerm)}`;
+    console.log('📡 Trying alternative:', altUrl);
+    
+    const altResponse = await fetch(altUrl, { signal: AbortSignal.timeout(10000) });
+    
+    if (altResponse.ok) {
+      const altData = await altResponse.json();
+      
+      if (altData.verses && altData.verses.length > 0) {
+        const results = altData.verses.map((v: any) => ({
+          reference: `${v.book_name || v.book} ${v.chapter}:${v.verse}`,
+          text: v.text,
+          book: v.book_name || v.book,
+          chapter: v.chapter,
+          verse: v.verse,
+          translation: translation.toUpperCase()
+        }));
+        
+        console.log(`✅ Found ${results.length} results (alternative)`);
+        return res.json({ 
+          success: true, 
+          query: searchTerm, 
+          results, 
+          count: results.length 
+        });
+      }
+    }
+    
+    // No results
+    console.log('❌ No results found');
+    return res.json({ success: true, query: searchTerm, results: [], count: 0 });
+    
+  } catch (error: any) {
+    console.error('Search error:', error.message);
+    
+    // Fallback: return empty results
+    res.json({ 
+      success: true, 
+      query: searchTerm, 
+      results: [], 
+      count: 0,
+      error: 'Search service temporarily unavailable'
+    });
+  }
 });
 
 // ============ START SERVER ============
