@@ -126,9 +126,25 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       const paymentUrl = data.paymentUrl || data.authorization_url;
 
       if (paymentUrl) {
-        // Redirect to Paystack checkout
-        console.log('🔗 Redirecting to Paystack:', paymentUrl);
-        window.location.href = paymentUrl;
+        // Check if running on native device
+        const isNative = (window as any).Capacitor?.isNativePlatform();
+        
+        if (isNative) {
+          // Open in external browser (not WebView)
+          console.log('📱 Opening in external browser:', paymentUrl);
+          window.open(paymentUrl, '_system');
+          
+          // Start polling for Pro status
+          setError('Complete payment in your browser, then return to the app.');
+          setProcessing(false);
+          
+          // Poll for Pro status
+          pollProStatus(currentUserId);
+        } else {
+          // Web - redirect normally
+          console.log('🔗 Redirecting to Paystack:', paymentUrl);
+          window.location.href = paymentUrl;
+        }
       } else {
         throw new Error('No payment URL received');
       }
@@ -138,6 +154,47 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
       setError(err.message || 'Payment failed. Please try again.');
       setProcessing(false);
     }
+  };
+
+  // Poll for Pro status after mobile payment
+  const pollProStatus = (userId: string) => {
+    let attempts = 0;
+    const maxAttempts = 30; // Poll for 2.5 minutes
+    
+    const interval = setInterval(async () => {
+      attempts++;
+      console.log(`🔍 Polling Pro status (${attempts}/${maxAttempts})...`);
+      
+      try {
+        const response = await fetch(
+          `https://logos-daily-backend.onrender.com/api/payments/pro-status/${userId}`
+        );
+        const data = await response.json();
+        
+        if (data.isPro) {
+          clearInterval(interval);
+          console.log('✅ Pro confirmed!');
+          
+          localStorage.setItem(`isPro_${userId}`, 'true');
+          localStorage.setItem('logos_daily_pro', 'true');
+          localStorage.removeItem('pendingProUserId');
+          localStorage.removeItem('pendingProPlan');
+          
+          setProStatus(true);
+          onSuccess?.();
+          showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
+          onClose();
+        }
+      } catch (e) {
+        console.error('Poll error:', e);
+      }
+      
+      if (attempts >= maxAttempts) {
+        clearInterval(interval);
+        setError('Payment may have succeeded. Check Pro status in Settings.');
+        setProcessing(false);
+      }
+    }, 5000);
   };
 
   return (

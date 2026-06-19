@@ -4,7 +4,8 @@
   "webDir": "dist",
   "server": {
     "androidScheme": "https",
+    "url": "https://logos-daily.web.app",
     "cleartext": true,
-    "allowNavigation": ["*.firebaseapp.com", "*.paystack.com"]
+    "allowNavigation": ["*.firebaseapp.com", "*.paystack.com", "*.paystack.co"]
   }
 }

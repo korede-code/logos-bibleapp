@@ -80,6 +80,43 @@ const SettingsScreen: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
+
+  useEffect(() => {
+    // Handle app resume after payment
+    const handleResume = async () => {
+      const pendingUserId = localStorage.getItem('pendingProUserId');
+      if (pendingUserId) {
+        console.log('📱 App resumed, checking Pro for:', pendingUserId);
+      
+        try {
+          const response = await fetch(
+            `https://logos-daily-backend.onrender.com/api/payments/pro-status/${pendingUserId}`
+          );
+          const data = await response.json();
+        
+          if (data.isPro) {
+            localStorage.setItem(`isPro_${pendingUserId}`, 'true');
+            localStorage.setItem('logos_daily_pro', 'true');
+            localStorage.removeItem('pendingProUserId');
+            localStorage.removeItem('pendingProPlan');
+            updateProStatus(true, pendingUserId);
+            showToast('🎉 Pro upgrade confirmed!', '#4CAF50');
+          }
+        } catch (e) {
+          console.error('Resume check error:', e);
+        }
+      }
+    };
+
+    document.addEventListener('resume', handleResume);
+    window.addEventListener('focus', handleResume);
+  
+    return () => {
+      document.removeEventListener('resume', handleResume);
+      window.removeEventListener('focus', handleResume);
+    };
+  }, []);
+
   
 
   const handleSignOut = async () => {

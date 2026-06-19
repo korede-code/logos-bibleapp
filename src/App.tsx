@@ -1,5 +1,6 @@
 // src/App.tsx
 import React, { useEffect, useState } from 'react';
+import { App } from '@capacitor/app';
 import { useAppStore } from './store/appStore';
 import { onAuthChange } from './config/firebase';
 import HomeScreen from './components/HomeScreen';
@@ -14,6 +15,7 @@ import GroupsScreen from './components/GroupsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import BottomNav from './components/BottomNav';
 import { getTheme } from './utils/themeUtils';
+
 
 const SCREENS: Record<string, React.ComponentType> = {
   home: HomeScreen,
@@ -107,6 +109,74 @@ const App: React.FC = () => {
         .catch(console.error);
     }
   }, []);
+
+  // src/App.tsx - Add at the top with other imports
+
+
+  // Inside the App component, add this useEffect with the others:
+  useEffect(() => {
+    // Only run on native devices
+    const isNative = (window as any).Capacitor?.isNativePlatform();
+    if (!isNative) return;
+
+    App.addListener('appUrlOpen', (data: any) => {
+      console.log('App opened with URL:', data.url);
+    
+      if (data.url.includes('payment-success') || data.url.includes('reference=')) {
+        const url = new URL(data.url);
+        const reference = url.searchParams.get('reference');
+      
+        if (reference) {
+          verifyAndActivatePro(reference);
+        }
+      }
+    });
+
+    // Also check on app resume
+    const handleResume = () => {
+      const pendingUserId = localStorage.getItem('pendingProUserId');
+      if (pendingUserId) {
+        fetch(`https://logos-daily-backend.onrender.com/api/payments/pro-status/${pendingUserId}`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.isPro) {
+              localStorage.setItem(`isPro_${pendingUserId}`, 'true');
+              localStorage.setItem('logos_daily_pro', 'true');
+              localStorage.removeItem('pendingProUserId');
+              useAppStore.getState().setProStatus(true);
+            }
+          });
+      }
+    };
+
+    document.addEventListener('resume', handleResume);
+    return () => {
+      document.removeEventListener('resume', handleResume);
+    };
+  }, []);
+
+  // Add this function outside the component (at the bottom of App.tsx):
+  async function verifyAndActivatePro(reference: string) {
+    try {
+      const response = await fetch(
+        `https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`
+      );
+      const data = await response.json();
+    
+      if (data.success) {
+        const userId = localStorage.getItem('pendingProUserId');
+        if (userId) {
+          localStorage.setItem(`isPro_${userId}`, 'true');
+          localStorage.setItem('logos_daily_pro', 'true');
+          localStorage.removeItem('pendingProUserId');
+          localStorage.removeItem('pendingProPlan');
+          useAppStore.getState().setProStatus(true);
+        }
+      }
+    } catch (e) {
+      console.error('Deep link verification error:', e);
+    }
+  }
 
   const ActiveScreen = SCREENS[currentScreen] ?? HomeScreen;
   const hideNav = readerSettings.focusMode && currentScreen === 'reader';

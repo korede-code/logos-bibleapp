@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const app = express();
 
+
 // CORS - Allow everything
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -812,13 +813,19 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
 });
 
 
-// ============ SEARCH ============
-// ============ SEARCH FULL BIBLE ============
-// ============ SEARCH FULL BIBLE ============
-// ============ SEARCH FULL BIBLE ============
-// ============ SEARCH FULL BIBLE ============
-// ============ SEARCH FULL BIBLE ============
-// ============ SEARCH FULL BIBLE ============
+// Load the Bible data at startup
+let BIBLE = {};
+try {
+  const biblePath = path.join(__dirname, 'data', 'bible-kjv.json');
+  if (fs.existsSync(biblePath)) {
+    BIBLE = JSON.parse(fs.readFileSync(biblePath, 'utf8'));
+    console.log(`✅ Bible loaded: ${Object.keys(BIBLE).length} books`);
+  }
+} catch (e) {
+  console.log('⚠️ Bible file not found, using API fallback');
+}
+
+// ============ SEARCH FULL BIBLE (LOCAL) ============
 app.get('/api/bible/search', async (req, res) => {
   const { q, translation = 'kjv' } = req.query;
   
@@ -827,29 +834,32 @@ app.get('/api/bible/search', async (req, res) => {
   }
   
   const searchTerm = q.toString().trim().toLowerCase();
-  console.log('🔍 Searching for: "' + searchTerm + '"');
+  const results = [];
   
-  // Use the POPULAR_VERSES that's already in your codebase
-  // This should already exist in your server.js
-  const results = POPULAR_VERSES.filter(verse => 
-    verse.text.toLowerCase().includes(searchTerm) ||
-    verse.ref.toLowerCase().includes(searchTerm)
-  ).map(verse => {
-    const parts = verse.ref.split(' ');
-    const book = parts.slice(0, -1).join(' ');
-    const chapterVerse = parts[parts.length - 1];
-    const [chapter, verseNum] = chapterVerse.split(':');
-    return {
-      reference: verse.ref,
-      text: verse.text,
-      book: book,
-      chapter: parseInt(chapter) || 1,
-      verse: parseInt(verseNum) || 1,
-      translation: translation.toUpperCase()
-    };
-  });
+  // Search through the ENTIRE local Bible
+  for (const [book, chapters] of Object.entries(BIBLE)) {
+    for (const [chapter, verses] of Object.entries(chapters)) {
+      for (const [verse, text] of Object.entries(verses)) {
+        if (text.toLowerCase().includes(searchTerm)) {
+          results.push({
+            reference: `${book} ${chapter}:${verse}`,
+            text: text,
+            book: book,
+            chapter: parseInt(chapter),
+            verse: parseInt(verse),
+            translation: translation.toUpperCase()
+          });
+          
+          // Limit to 100 results
+          if (results.length >= 100) break;
+        }
+      }
+      if (results.length >= 100) break;
+    }
+    if (results.length >= 100) break;
+  }
   
-  console.log(`✅ Found ${results.length} results from local database`);
+  console.log(`✅ Found ${results.length} results for "${searchTerm}"`);
   res.json({ success: true, query: searchTerm, results, count: results.length });
 });
 
