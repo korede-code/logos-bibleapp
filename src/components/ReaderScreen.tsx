@@ -14,7 +14,7 @@
 
 import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
-  ChevronLeft, ChevronRight, Settings2, Bookmark,
+  ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, MessageSquare,
   WifiOff, RefreshCw, Search
@@ -26,6 +26,7 @@ import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
 import AnnotationToolbar from './AnnotationToolbar';
 import ReaderSettingsPanel from './ReaderSettingsPanel';
 import BookNavigator from './BookNavigator';
+import { offlineStorage } from '../services/offlineStorage';
 
 // ─── Red Letter Words/Phrases (from Jesus' direct speech) ─────────────────────
 
@@ -442,6 +443,8 @@ const ReaderScreen: React.FC = () => {
     updateReaderSettings, selectVerse, deselectVerse,
     addBookmark, bookmarks, recordReadingSession
   } = useAppStore();
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState(0);
 
   const { 
     verses: apiVerses, 
@@ -456,6 +459,52 @@ const ReaderScreen: React.FC = () => {
     readingPosition.chapter,
     readingPosition.translation || readerSettings.translation
   );
+
+  // Download current book for offline
+  const downloadCurrentBook = async () => {
+    const book = readingPosition.book;
+    const totalChapters = currentBook?.chapters || 1;
+    
+    setIsDownloading(true);
+    setDownloadProgress(0);
+    
+    for (let ch = 1; ch <= totalChapters; ch++) {
+      try {
+        const response = await fetch(
+          `https://logos-daily-backend.onrender.com/api/bible/${encodeURIComponent(book)}/${ch}?translation=${readerSettings.translation.toLowerCase()}`
+        );
+        const data = await response.json();
+        
+        if (data.success && data.data) {
+          await offlineStorage.saveChapter(book, ch, readerSettings.translation, data.data);
+        }
+        
+        setDownloadProgress(Math.round((ch / totalChapters) * 100));
+
+        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
+      } catch (e) {
+        console.error(`Failed to cache ${book} ${ch}`, e);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+    }
+    
+    setIsDownloading(false);
+    showToast(`✅ ${book} saved for offline reading!`, '#4CAF50');
+  };
+  
+  const showToast = (message: string, bgColor: string) => {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: ${bgColor}; color: white; padding: 10px 20px;
+      border-radius: 10px; z-index: 1000; font-size: 14px;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  };
+
+
 
   // Debug logs
   useEffect(() => {
@@ -697,11 +746,26 @@ const ReaderScreen: React.FC = () => {
 
   return (
     <div className="flex flex-col h-full overflow-hidden" style={{ backgroundColor: theme.bg }}>
+
+      {/* Download progress bar */}
+      {isDownloading && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-1" style={{ backgroundColor: theme.border }}>
+          <div 
+            className="h-full transition-all duration-300" 
+            style={{ 
+              width: `${downloadProgress}%`, 
+              backgroundColor: theme.accent 
+            }} 
+          />
+        </div>
+      )}
+
       {/* Offline/Cache Indicator */}
       {(isOffline || fromCache) && !isLoading && (
-        <div className="flex items-center justify-center gap-2 py-1.5 text-xs" style={{ backgroundColor: isOffline ? '#f59e0b20' : '#4caf5020', color: isOffline ? '#f59e0b' : '#4caf50' }}>
-          {isOffline ? <WifiOff size={12} /> : <BookOpen size={12} />}
-          <span>{isOffline ? 'Offline mode - using cached Scripture' : fromCache ? 'Using cached version (updated when online)' : ''}</span>
+        <div className="flex items-center justify-center gap-2 py-1.5 text-xs" 
+          style={{ backgroundColor: fromCache ? '#4caf5020' : '#f59e0b20', color: fromCache ? '#4caf50' : '#f59e0b' }}>
+          {fromCache ? <HardDrive size={12} /> : <WifiOff size={12} />}
+          <span>{fromCache ? 'Reading from offline cache' : 'Offline mode - using cached chapters'}</span>
         </div>
       )}
 
@@ -735,6 +799,15 @@ const ReaderScreen: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1">
+            {/* Download for offline button */}
+            <button
+              onClick={downloadCurrentBook}
+              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" 
+              style={{ color: theme.textMuted }}
+              title="Download book for offline reading"
+            >
+              <Download size={18} />
+            </button>
             <button onClick={() => refetch()} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: theme.textMuted }} disabled={isLoading}>
               <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
             </button>

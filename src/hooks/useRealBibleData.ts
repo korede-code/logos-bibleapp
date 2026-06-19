@@ -2,10 +2,12 @@
  * Real Bible Data Hook
  * ====================
  * Simplified custom hooks for accessing Bible API data
+ * Now with offline caching support!
  */
 
 import { useEffect, useCallback, useState } from 'react';
 import { useAppStore } from '../store/appStore';
+import { offlineStorage } from '../services/offlineStorage';
 
 // Types
 export interface Verse {
@@ -72,6 +74,19 @@ export function useBibleVerse(
     setError(null);
     
     try {
+      // Try cache first
+      const cached = await offlineStorage.getChapter(book, chapter, translation);
+      if (cached) {
+        const cachedVerse = cached.verses.find((v: any) => v.verse === verseNumber);
+        if (cachedVerse) {
+          setVerseData(cachedVerse);
+          setFromCache(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      // Fetch from API
       const data = await fetchVerse(translation, book, chapter, verseNumber);
       if (data) {
         setVerseData(data);
@@ -101,7 +116,7 @@ export function useBibleVerse(
 }
 
 /**
- * Hook for fetching an entire chapter
+ * Hook for fetching an entire chapter (with offline caching)
  */
 export function useBibleChapter(
   book: string,
@@ -115,19 +130,40 @@ export function useBibleChapter(
   const [fromCache, setFromCache] = useState(false);
 
   const fetchData = useCallback(async () => {
-    console.log(`📖 useBibleChapter: Fetching ${book} ${chapter} (${translation})`);
+    console.log(`📖 Fetching ${book} ${chapter} (${translation})`);
     setIsLoading(true);
     setError(null);
-    setProgress(0);
+    setProgress(10);
     
     try {
+      // ✅ 1. Try offline cache first
+      const cached = await offlineStorage.getChapter(book, chapter, translation);
+      
+      if (cached && cached.verses.length > 0) {
+        console.log(`📦 Loaded from offline cache: ${book} ${chapter}`);
+        useAppStore.setState({ currentChapterVerses: cached.verses });
+        setFromCache(true);
+        setProgress(100);
+        setIsLoading(false);
+        return;
+      }
+      
+      // ✅ 2. Fetch from API
       setProgress(30);
       await fetchChapter(translation, book, chapter);
-      setProgress(100);
+      
+      // ✅ 3. Cache for offline use
+      const verses = useAppStore.getState().currentChapterVerses;
+      if (verses && verses.length > 0) {
+        await offlineStorage.saveChapter(book, chapter, translation, verses);
+        console.log(`💾 Cached for offline: ${book} ${chapter}`);
+      }
+      
       setFromCache(false);
-      console.log(`📖 useBibleChapter: Fetch complete`);
+      setProgress(100);
+      console.log(`📖 Fetch complete: ${book} ${chapter}`);
     } catch (err) {
-      console.error('❌ useBibleChapter: Error:', err);
+      console.error('❌ Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch chapter');
     } finally {
       setIsLoading(false);

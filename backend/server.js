@@ -725,11 +725,32 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
     const { book, chapter, verse } = req.params;
     const translation = req.query.translation || 'kjv';
     const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}:${verse}?translation=${translation}`;
+
+    console.log('📖 Fetching:', url);
     
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`API returned ${response.status}`);
+    //const response = await fetch(url);
+    //if (!response.ok) throw new Error(`API returned ${response.status}`);
+
+    // Try up to 3 times with delay
+    let response;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      response = await fetch(url, { signal: AbortSignal.timeout(10000) });
+
+      if (response.status === 429) {
+        // Rate limited - wait and retry
+        console.log(`⏳ Rate limited, retrying in ${(attempt + 1) * 2}s...`);
+        await new Promise(r => setTimeout(r, (attempt + 1) * 2000));
+      } else {
+        break;
+      }
+    }
+
+    if (!response || !response.ok) {
+      throw new Error(`API returned ${response?.status || 'error'}`);
+    }
     
     const data = await response.json();
+    
     res.json({ success: true, data: [{ book, chapter: parseInt(chapter), verse: parseInt(verse), text: data.text, translation: translation.toUpperCase() }] });
   } catch (error) {
     res.json({ success: true, data: [{ book, chapter: parseInt(chapter), verse: parseInt(verse), text: `${book} ${chapter}:${verse}`, translation: translation.toUpperCase() }] });
