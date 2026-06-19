@@ -750,7 +750,7 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
     }
     
     const data = await response.json();
-    
+
     res.json({ success: true, data: [{ book, chapter: parseInt(chapter), verse: parseInt(verse), text: data.text, translation: translation.toUpperCase() }] });
   } catch (error) {
     res.json({ success: true, data: [{ book, chapter: parseInt(chapter), verse: parseInt(verse), text: `${book} ${chapter}:${verse}`, translation: translation.toUpperCase() }] });
@@ -794,23 +794,60 @@ app.get('/api/bible/:translation/:book/:chapter/:verse', async (req, res) => {
   }
 });
 
-// Bible API proxy
+// ============ GET BIBLE CHAPTER ============
 app.get('/api/bible/:book/:chapter', async (req, res) => {
+  const { book, chapter } = req.params;
+  const translation = (req.query.translation || 'kjv').toLowerCase();
+  
+  console.log('📖 Fetching:', `${book} ${chapter} (${translation})`);
+  
+  // Generate fallback verses in case API fails
+  const fallbackVerses = [];
+  const maxVerses = book === 'Psalms' || book === 'Psalm' ? 176 : 40;
+  for (let i = 1; i <= maxVerses; i++) {
+    fallbackVerses.push({
+      book: book,
+      chapter: parseInt(chapter),
+      verse: i,
+      text: `${book} ${chapter}:${i} - Content unavailable offline`,
+      translation: translation.toUpperCase()
+    });
+  }
+  
   try {
-    const { book, chapter } = req.params;
-    const translation = req.query.translation || 'kjv';
     const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
     
-    console.log('📖 Fetching Bible:', url);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
     
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`Bible API returned ${response.status}`);
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeout);
     
-    const data = await response.json();
-    res.json(data);
+    if (response.ok) {
+      const data = await response.json();
+      
+      if (data.verses && data.verses.length > 0) {
+        const verses = data.verses.map((v) => ({
+          book: v.book_name || book,
+          chapter: v.chapter,
+          verse: v.verse,
+          text: v.text.trim(),
+          translation: translation.toUpperCase()
+        }));
+        
+        console.log(`✅ API: ${verses.length} verses`);
+        return res.json({ success: true, data: verses, source: 'api' });
+      }
+    }
+    
+    // API failed - return fallback
+    console.log('⚠️ API failed, using fallback');
+    res.json({ success: true, data: fallbackVerses, source: 'fallback' });
+    
   } catch (error) {
-    console.error('Bible API error:', error.message);
-    res.status(500).json({ error: 'Failed to fetch Bible content' });
+    // Always return fallback, never 500
+    console.log('⚠️ Error, using fallback:', error.message);
+    res.json({ success: true, data: fallbackVerses, source: 'fallback' });
   }
 });
 
