@@ -52,19 +52,24 @@ app.get('/api/health', (req, res) => {
 // Initialize payment
 app.post('/api/payments/initialize', async (req, res) => {
   try {
-    const { email, amount, planId, userId } = req.body;
+    const { email, amount, planId, userId, isMobile } = req.body;
     const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
     console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
     // Use real Paystack (no more mock mode)
-    const https = require('https');
+    //const https = require('https');
+    // Use different callback for mobile vs web
+    const callbackUrl = isMobile 
+      ? 'com.logosdaily.app://payment-success'
+      : 'https://logos-daily.web.app/payment-success';
+      
     const params = JSON.stringify({
       email: email,
       amount: Math.round(amount * 100), // Convert to kobo
       currency: 'NGN',
       reference: reference,
-      callback_url: 'com.logosdaily.app://payment-success',
+      callback_url: callbackUrl,
       metadata: { userId, plan: planId }
     });
 
