@@ -179,7 +179,8 @@ app.get('/api/payments/pro-status/:userId', (req, res) => {
 
 // Webhook
 // Webhook - Make sure this is working
-app.post('/api/payments/webhook', (req, res) => {
+// Webhook - IMPORTANT: Parse raw body for Paystack
+app.post('/api/payments/webhook', express.json(), (req, res) => {
   const event = req.body;
   console.log('📨 Webhook received:', JSON.stringify(event));
 
@@ -203,8 +204,6 @@ app.post('/api/payments/webhook', (req, res) => {
       };
       writeUsers(data);
       console.log('✅ Pro activated for:', userId);
-    } else {
-      console.error('❌ No userId in webhook metadata');
     }
   }
   
