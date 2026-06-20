@@ -168,14 +168,14 @@ app.get('/api/payments/pro-status/:userId', (req, res) => {
 });
 
 // Set Pro status (test endpoint)
-//app.post('/api/payments/test-set-pro', (req, res) => {
-  //const { userId } = req.body;
-  //const data = readUsers();
-  //data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
-  //writeUsers(data);
-  //console.log('✅ Pro set for:', userId);
-  //res.json({ success: true, isPro: true });
-//});
+app.post('/api/payments/test-set-pro', (req, res) => {
+  const { userId } = req.body;
+  const data = readUsers();
+  data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
+  writeUsers(data);
+  console.log('✅ Pro set for:', userId);
+  res.json({ success: true, isPro: true });
+});
 
 // Webhook
 // Webhook - Make sure this is working
