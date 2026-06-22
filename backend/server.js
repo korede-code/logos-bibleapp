@@ -58,7 +58,7 @@ app.post('/api/payments/initialize', async (req, res) => {
     console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
     // Use real Paystack (no more mock mode)
-    //const https = require('https');
+    const https = require('https');
     // Use different callback for mobile vs web
     const callbackUrl = isMobile 
       ? 'com.logosdaily.app://payment-success'
@@ -119,8 +119,7 @@ app.post('/api/payments/initialize', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// Verify payment
-// Verify payment
+
 // Verify payment
 app.get('/api/payments/verify/:reference', (req, res) => {
   const { reference } = req.params;
@@ -182,8 +181,6 @@ app.post('/api/payments/test-set-pro', (req, res) => {
   res.json({ success: true, isPro: true });
 });
 
-// Webhook
-// Webhook - Make sure this is working
 // Webhook - IMPORTANT: Parse raw body for Paystack
 app.post('/api/payments/webhook', express.json(), (req, res) => {
   const event = req.body;
@@ -649,14 +646,6 @@ app.get('/api/bible/votd', (req, res) => {
   });
 });
 
-// ===== GET CHAPTER - WITH REAL BIBLE CONTENT ========
-// backend/server.js - Complete working chapter endpoint
-
-// ============ BUILT-IN BIBLE CONTENT (Fallback) ============
-
-
-
-// Load the Bible data
 
 // ============ GET CHAPTER ENDPOINT ============
 
@@ -871,6 +860,28 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
     res.json(data);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch verse' });
+  }
+});
+
+// Text-to-Speech proxy
+app.get('/api/tts', async (req, res) => {
+  const { text } = req.query;
+  if (!text) return res.status(400).json({ error: 'Text required' });
+  
+  try {
+    // Use a free TTS API
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&client=tw-ob&q=${encodeURIComponent(text)}&tl=en`;
+    const response = await fetch(url);
+    
+    if (response.ok) {
+      const buffer = await response.arrayBuffer();
+      res.set('Content-Type', 'audio/mpeg');
+      res.send(Buffer.from(buffer));
+    } else {
+      res.status(500).json({ error: 'TTS failed' });
+    }
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
