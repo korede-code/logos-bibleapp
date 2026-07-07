@@ -18,7 +18,7 @@ app.use((req, res, next) => {
 
 app.use(express.json());
 
-console.log('🚀 Starting Logos Daily API Server...');
+console.log('🚀 Starting Synthesis Bible API Server...');
 
 // ============ PAYMENT ROUTES ============
 const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
@@ -72,6 +72,12 @@ app.post('/api/payments/initialize', async (req, res) => {
       callback_url: callbackUrl,
       metadata: { userId, plan: planId }
     });
+
+    const response = await axios.post('https://api.paystack.co/transaction/initialize', {
+      email: userEmail,
+      amount: 50000,
+      callback_url: 'https://logos-daily-backend.onrender.com/payment/callback'
+    }, { headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` } });
 
     const options = {
       hostname: 'api.paystack.co',
@@ -648,8 +654,6 @@ app.get('/api/bible/votd', (req, res) => {
 
 
 // ============ GET CHAPTER ENDPOINT ============
-
-// Match /api/bible/KJV/John/3 format (with translation)
 app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   try {
     const { translation, book, chapter } = req.params;
@@ -711,8 +715,6 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   };
   
   //const apiTranslation = translationMap[translationUpper] || 'kjv';
-  
- // Get verse
 app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
   try {
     const { book, chapter, verse } = req.params;
@@ -721,10 +723,6 @@ app.get('/api/bible/:book/:chapter/:verse', async (req, res) => {
 
     console.log('📖 Fetching:', url);
     
-    //const response = await fetch(url);
-    //if (!response.ok) throw new Error(`API returned ${response.status}`);
-
-    // Try up to 3 times with delay
     let response;
     for (let attempt = 0; attempt < 3; attempt++) {
       response = await fetch(url, { signal: AbortSignal.timeout(10000) });
