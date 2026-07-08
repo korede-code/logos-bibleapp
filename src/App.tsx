@@ -47,6 +47,30 @@ const App: React.FC = () => {
   const theme = getTheme(readerSettings.theme);
   const [loading, setLoading] = useState(false); // ✅ Start as false, not true
 
+
+  // Add this debug listener at the top of your component
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      console.log('📱 Registering appStateChange listener');
+      
+      const handler = (state: any) => {
+        console.log('🔄 App state changed:', state);
+      };
+      
+      const listener = App.addListener('appStateChange', handler);
+      
+      // Clean up
+      return () => {
+        console.log('🧹 Cleaning up appStateChange listener');
+        if (listener && typeof listener.remove === 'function') {
+          listener.remove();
+        }
+      };
+    } else {
+      console.log('🌐 Running on web - skipping native listeners');
+    }
+  }, []);
+
   // ✅ ADD THIS FIRST - Payment callback check
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);

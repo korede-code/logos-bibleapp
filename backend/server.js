@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const app = express();
+const axios = require('axios');
 
 
 // CORS - Allow everything
@@ -58,15 +59,15 @@ app.post('/api/payments/initialize', async (req, res) => {
 
     console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
-    // Use different callback for mobile vs web
     const callbackUrl = isMobile 
-      ? 'com.logosdaily.app://payment-success'  // Mobile deep link
-      : 'https://logos-daily.web.app/payment-success';  // Web
+      ? 'com.logosdaily.app://payment-success'
+      : 'https://logos-daily.web.app/payment-success';
 
+    // Use the imported 'axios' here
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
       {
-        email: email,  // Fix: Use the email from request
+        email: email, // FIXED: Use 'email' instead of 'userEmail'
         amount: Math.round(amount * 100),
         currency: 'NGN',
         reference: reference,
