@@ -43,9 +43,7 @@ export const PRO_PLANS: Record<string, ProPlan> = {
 
 const API_BASE_URL = 'https://logos-daily-backend.onrender.com/api';
 
-/**
- * Initialize a payment with Paystack via your backend
- */
+ // Initialize a payment with Paystack via your backend
 export const initializePayment = async (
   email: string,
   plan: ProPlan,
@@ -86,9 +84,7 @@ export const initializePayment = async (
   }
 };
 
-/**
- * Verify a payment with Paystack via your backend
- */
+ // Verify a payment with Paystack via your backend
 export const verifyPayment = async (reference: string): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
     const response = await fetch(`${API_BASE_URL}/payments/verify/${reference}`);
@@ -114,16 +110,13 @@ export const verifyPayment = async (reference: string): Promise<{ success: boole
   }
 };
 
-/**
- * Calculate amount in kobo from naira
- */
+
+ // Calculate amount in kobo from naira
 export const toKobo = (naira: number): number => {
   return Math.round(naira * 100);
 };
 
-/**
- * Format amount for display
- */
+ // Format amount for display
 export const formatNaira = (kobo: number): string => {
   return `₦${(kobo / 100).toLocaleString()}`;
 };

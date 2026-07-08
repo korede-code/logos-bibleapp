@@ -54,9 +54,7 @@ export interface UseOfflineSyncResult {
   sync: () => Promise<void>;
 }
 
-/**
- * Hook for fetching a single verse
- */
+ // Hook for fetching a single verse
 export function useBibleVerse(
   book: string,
   chapter: number,
@@ -115,9 +113,7 @@ export function useBibleVerse(
   };
 }
 
-/**
- * Hook for fetching an entire chapter (with offline caching)
- */
+ // Hook for fetching an entire chapter (with offline caching)
 export function useBibleChapter(
   book: string,
   chapter: number,
@@ -185,9 +181,7 @@ export function useBibleChapter(
   };
 }
 
-/**
- * Hook for searching the Bible
- */
+ // Hook for searching the Bible
 export function useBibleSearch(): UseBibleSearchResult {
   const { searchBible, searchResults, isApiLoading, apiError } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
@@ -219,9 +213,7 @@ export function useBibleSearch(): UseBibleSearchResult {
   };
 }
 
-/**
- * Hook for checking offline status
- */
+ // Hook for checking offline status
 export function useOfflineSync(): UseOfflineSyncResult {
   const { isOnline, pendingSyncCount, syncOfflineChanges } = useAppStore();
   const [isSyncing, setIsSyncing] = useState(false);

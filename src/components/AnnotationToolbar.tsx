@@ -3,12 +3,15 @@
  */
 
 import React, { useState } from 'react';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 import { 
-  Highlighter, MessageSquare, Copy, Share2, Bookmark, X
+  Highlighter, MessageSquare, Copy, Share2, Bookmark, Image, X
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
 import { BIBLE_BOOKS } from '../data/bibleData';
+import VerseImageCreator from './VerseImageCreator';
 
 type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple' | 'orange';
 
@@ -29,9 +32,11 @@ const AnnotationToolbar: React.FC = () => {
   const theme = getTheme(readerSettings.theme);
   const [showColorPicker, setShowColorPicker] = useState(false);
   const [showNoteInput, setShowNoteInput] = useState(false);
+  const [showVerseImageCreator, setShowVerseImageCreator] = useState(false);
   const [noteContent, setNoteContent] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [showToast, setShowToast] = useState<string | null>(null);
+  const [selectedVerseForImage, setSelectedVerseForImage] = useState<{ reference: string; text: string } | null>(null);
 
   const toast = (msg: string) => {
     setShowToast(msg);
@@ -135,50 +140,108 @@ const AnnotationToolbar: React.FC = () => {
         if (el) {
           const textSpan = el.querySelector('span[role="button"]');
           if (textSpan) {
-            texts.push(`${verse}. ${textSpan.textContent?.trim()}`);
+            texts.push(`Verse ${verse}: ${textSpan.textContent?.trim()}`);
           }
         }
       });
 
       const verseData = getSelectedVersesData();
       const reference = verseData ? `${verseData.bookName} ${verseData.chapter}` : '';
-      const fullText = `${reference}\n${texts.join('\n')}`;
+      const fullText = `${reference}\n\n${texts.join('\n\n')}`;
 
-      await navigator.clipboard.writeText(fullText);
-      toast('✓ Copied');
-    } catch {
+      // Try clipboard API first
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(fullText);
+        toast('✓ Copied to clipboard');
+      } else {
+        // Fallback for older browsers/mobile
+        const textarea = document.createElement('textarea');
+        textarea.value = fullText;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-9999px';
+        textarea.style.top = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        
+        try {
+          document.execCommand('copy');
+          toast('✓ Copied to clipboard');
+        } catch {
+          toast('Copy failed - please try again');
+        }
+        document.body.removeChild(textarea);
+      }
+    } catch (err) {
+      console.error('Copy failed:', err);
       toast('Copy failed');
     }
   };
 
   const handleShare = async () => {
     if (selectedVerses.length === 0) return;
-    
+
     const texts: string[] = [];
     selectedVerses.forEach(verseKey => {
-      const [, , verse] = verseKey.split(':');
+      const [,, verse] = verseKey.split(':');
       const el = document.getElementById(`verse-${verse}`);
       if (el) {
         const textSpan = el.querySelector('span[role="button"]');
         if (textSpan) {
-          texts.push(textSpan.textContent?.trim());
+          texts.push(`[${verse}] ${textSpan.textContent?.trim()}`);
         }
       }
     });
 
     const verseData = getSelectedVersesData();
-    const reference = verseData ? `${verseData.bookName} ${verseData.chapter}` : '';
-    const shareText = `${reference}\n${texts.join(' ')}`;
+    const reference = verseData? `${verseData.bookName} ${verseData.chapter}` : 'Bible Verse';
+    const verseText = texts.join('\n\n');
+    const shareText = `${reference}\n\n${verseText}\n\n📖 Shared from Synthesis Bible`;
 
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'Bible Verse', text: shareText });
-      } else {
-        await navigator.clipboard.writeText(shareText);
-        toast('✓ Copied (share not supported)');
+    // Use Capacitor Share on native - opens WhatsApp, Facebook, SMS, etc
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: reference,
+          text: shareText,
+          dialogTitle: 'Share verse',
+        });
+        toast('✓ Shared successfully');
+        return;
+      } catch (err: any) {
+        if (err.message?.includes('cancel') || err.name === 'AbortError') return;
+        console.error('Share failed:', err);
       }
+    }
+
+    // Web fallback: Try navigator.share
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: reference,
+          text: shareText,
+        });
+        toast('✓ Shared successfully');
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Final fallback: Copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText);
+      toast('✓ Verse copied to clipboard');
     } catch {
-      // User cancelled
+      const textarea = document.createElement('textarea');
+      textarea.value = shareText;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      toast('✓ Verse copied!');
     }
   };
 
@@ -363,15 +426,52 @@ const AnnotationToolbar: React.FC = () => {
 
           {/* Copy button */}
           <button
-            onClick={handleCopy}
-            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
-            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              
+              if (selectedVerses.length === 0) return;
+              
+              const texts: string[] = [];
+              selectedVerses.forEach(verseKey => {
+                const [, , verse] = verseKey.split(':');
+                const el = document.getElementById(`verse-${verse}`);
+                if (el) {
+                  const textSpan = el.querySelector('span[role="button"]');
+                  if (textSpan) {
+                    texts.push(`Verse ${verse}: ${textSpan.textContent?.trim()}`);
+                  }
+                }
+              });
+              
+              const verseData = getSelectedVersesData();
+              const reference = verseData ? `${verseData.bookName} ${verseData.chapter}` : '';
+              const fullText = `${reference}\n\n${texts.join('\n\n')}`;
+              
+              // Use clipboard API
+              navigator.clipboard.writeText(fullText).then(() => {
+                E('✓ Copied to clipboard');
+              }).catch(() => {
+                // Fallback
+                const textarea = document.createElement('textarea');
+                textarea.value = fullText;
+                textarea.style.position = 'fixed';
+                textarea.style.left = '-9999px';
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                E('✓ Copied to clipboard');
+              });
+            }}
+            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px]"
+            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}`, cursor: 'pointer' }}
           >
             <Copy size={18} />
             <span className="text-[11px] font-medium">Copy</span>
           </button>
 
-          {/* Share button */}
+          {/* Share button - with WhatsApp/Facebook/SMS/Telegram */}
           <button
             onClick={handleShare}
             className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
@@ -389,6 +489,48 @@ const AnnotationToolbar: React.FC = () => {
           >
             <Bookmark size={18} />
             <span className="text-[11px] font-medium">Bookmark</span>
+          </button>
+
+          {/* Image button */}
+          <button
+            onClick={() => {
+              // Get verse text directly from selected verses
+              const verseTexts: string[] = [];
+              let reference = '';
+              
+              selectedVerses.forEach(verseKey => {
+                const [bookId, chapter, verse] = verseKey.split(':');
+                const verseElement = document.getElementById(`verse-${verse}`);
+                if (verseElement) {
+                  const textSpan = verseElement.querySelector('span[role="button"]');
+                  if (textSpan) {
+                    const text = textSpan.textContent?.trim() || '';
+                    verseTexts.push(text);
+                  }
+                }
+                
+                // Build reference from first verse
+                if (!reference) {
+                  const book = BIBLE_BOOKS.find(b => b.id === parseInt(bookId));
+                  reference = `${book?.name || ''} ${chapter}:${verse}`;
+                }
+              });
+              
+              const fullText = verseTexts.join(' ');
+              console.log('Image verse data:', { reference, fullText });
+              
+              if (fullText) {
+                setSelectedVerseForImage({ reference, text: fullText });
+                setShowVerseImageCreator(true);
+              } else {
+                E('Please select verses first');
+              }
+            }}
+            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px]"
+            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
+          >
+            <Image size={18} />
+            <span className="text-[11px] font-medium">Image</span>
           </button>
         </div>
       </div>
@@ -458,6 +600,19 @@ const AnnotationToolbar: React.FC = () => {
           {showToast}
         </div>
       )}
+
+      {showVerseImageCreator && selectedVerseForImage && (
+        <VerseImageCreator
+          isOpen={showVerseImageCreator}
+          onClose={() => {
+           setShowVerseImageCreator(false);
+           setSelectedVerseForImage(null);
+          }}
+          verse={selectedVerseForImage}
+          theme={theme}
+        />
+      )}
+
     </>
   );
 };

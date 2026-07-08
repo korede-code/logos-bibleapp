@@ -50,6 +50,7 @@ app.get('/api/health', (req, res) => {
 
 // Initialize payment
 // Initialize payment
+// Initialize payment - FIXED
 app.post('/api/payments/initialize', async (req, res) => {
   try {
     const { email, amount, planId, userId, isMobile } = req.body;
@@ -57,69 +58,38 @@ app.post('/api/payments/initialize', async (req, res) => {
 
     console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
-    // Use real Paystack (no more mock mode)
-    const https = require('https');
     // Use different callback for mobile vs web
     const callbackUrl = isMobile 
-      ? 'com.logosdaily.app://payment-success'
-      : 'https://logos-daily.web.app/payment-success';
-      
-    const params = JSON.stringify({
-      email: email,
-      amount: Math.round(amount * 100), // Convert to kobo
-      currency: 'NGN',
-      reference: reference,
-      callback_url: callbackUrl,
-      metadata: { userId, plan: planId }
-    });
+      ? 'com.logosdaily.app://payment-success'  // Mobile deep link
+      : 'https://logos-daily.web.app/payment-success';  // Web
 
-    const response = await axios.post('https://api.paystack.co/transaction/initialize', {
-      email: userEmail,
-      amount: 50000,
-      callback_url: 'https://logos-daily-backend.onrender.com/payment/callback'
-    }, { headers: { Authorization: `Bearer ${PAYSTACK_SECRET}` } });
-
-    const options = {
-      hostname: 'api.paystack.co',
-      port: 443,
-      path: '/transaction/initialize',
-      method: 'POST',
-      headers: {
-        Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET,
-        'Content-Type': 'application/json'
-      }
-    };
-
-    const payReq = https.request(options, (payRes) => {
-      let data = '';
-      payRes.on('data', chunk => data += chunk);
-      payRes.on('end', () => {
-        try {
-          const result = JSON.parse(data);
-          if (result.status) {
-            // Return the REAL Paystack checkout URL
-            res.json({
-              success: true,
-              paymentUrl: result.data.authorization_url,
-              reference: reference
-            });
-          } else {
-            res.status(400).json({ success: false, error: result.message });
-          }
-        } catch (e) {
-          res.status(500).json({ success: false, error: 'Failed to parse Paystack response' });
+    const response = await axios.post(
+      'https://api.paystack.co/transaction/initialize',
+      {
+        email: email,  // Fix: Use the email from request
+        amount: Math.round(amount * 100),
+        currency: 'NGN',
+        reference: reference,
+        callback_url: callbackUrl,
+        metadata: { userId, plan: planId }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
+          'Content-Type': 'application/json'
         }
+      }
+    );
+
+    if (response.data.status) {
+      res.json({
+        success: true,
+        paymentUrl: response.data.data.authorization_url,
+        reference: reference
       });
-    });
-    
-    payReq.on('error', (err) => {
-      console.error('Paystack request error:', err);
-      res.status(500).json({ success: false, error: 'Payment service unavailable. Please try again.' });
-    });
-    
-    payReq.write(params);
-    payReq.end();
-    
+    } else {
+      res.status(400).json({ success: false, error: response.data.message });
+    }
   } catch (error) {
     console.error('Payment init error:', error);
     res.status(500).json({ success: false, error: error.message });
@@ -127,46 +97,40 @@ app.post('/api/payments/initialize', async (req, res) => {
 });
 
 // Verify payment
-app.get('/api/payments/verify/:reference', (req, res) => {
+// Verify payment - FIXED
+app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
 
-  // If no Paystack key, DON'T auto-approve - require real payment
   if (!process.env.PAYSTACK_SECRET) {
     return res.json({ success: false, verified: false, message: 'Payment service not configured' });
   }
 
-  const https = require('https');
-  const options = {
-    hostname: 'api.paystack.co',
-    port: 443,
-    path: '/transaction/verify/' + encodeURIComponent(reference),
-    method: 'GET',
-    headers: { Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET }
-  };
-  
-  https.get(options, (payRes) => {
-    let body = '';
-    payRes.on('data', chunk => body += chunk);
-    payRes.on('end', () => {
-      try {
-        const result = JSON.parse(body);
-        if (result.status && result.data.status === 'success') {
-          const userId = result.data.metadata?.userId;
-          if (userId) {
-            const users = readUsers();
-            users.users[userId] = { isPro: true, proSince: new Date().toISOString() };
-            writeUsers(users);
-          }
-          res.json({ success: true, verified: true });
-        } else {
-          res.json({ success: false, verified: false });
-        }
-      } catch (e) {
-        res.status(500).json({ success: false, error: 'Parse error' });
+  try {
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
+    );
+
+    if (response.data.status && response.data.data.status === 'success') {
+      const userId = response.data.data.metadata?.userId;
+      if (userId) {
+        const users = readUsers();
+        users.users[userId] = { 
+          isPro: true, 
+          proSince: new Date().toISOString(),
+          lastPaymentRef: reference
+        };
+        writeUsers(users);
       }
-    });
-  }).on('error', () => res.status(500).json({ success: false, error: 'API error' }));
+      res.json({ success: true, verified: true, userId });
+    } else {
+      res.json({ success: false, verified: false });
+    }
+  } catch (error) {
+    console.error('Verification error:', error);
+    res.status(500).json({ success: false, error: 'Verification failed' });
+  }
 });
 
 // Check Pro status

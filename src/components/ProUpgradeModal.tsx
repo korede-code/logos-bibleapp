@@ -47,6 +47,8 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
   const { setProStatus, readerSettings } = useAppStore();
   const theme = getTheme(themeMode as any);
 
+  const isNative = (window as any).Capacitor?.isNativePlatform();
+
   const features = [
     'Unlimited highlights & notes',
     'All 50+ reading plans',
@@ -113,6 +115,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({
           amount: selectedPlan.amount,
           planId: selectedPlan.id,
           userId: currentUserId,
+          isMobile: isNative,
         }),
       });
 

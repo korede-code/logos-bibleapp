@@ -4,6 +4,7 @@
  * Handles all communication with the Bible API backend.
  * Implements caching, retry logic, and offline support.
  */
+import { CapacitorHttp } from '@capacitor/core';
 
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
@@ -43,9 +44,7 @@ export interface SearchResult {
   relevance?: number;
 }
 
-/**
- * Simple in-memory cache for API responses
- */
+ //Simple in-memory cache for API responses
 class ApiCache {
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
   private defaultTTL = 3600000; // 1 hour in milliseconds
@@ -76,9 +75,7 @@ class ApiCache {
   }
 }
 
-/**
- * Bible API Client Class
- */
+ //Bible API Client Class 
 class BibleApiClient {
   private cache: ApiCache;
   private pendingRequests: Map<string, Promise<any>> = new Map();
@@ -87,20 +84,19 @@ class BibleApiClient {
     this.cache = new ApiCache();
   }
 
-  /**
-   * Generic request method with retry logic and caching
-   */
+  // Generic request method with retry logic and caching
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {},
+    options: any = {}, // Changed from RequestInit to any for CapacitorHttp
     useCache: boolean = true,
     retries: number = MAX_RETRIES
   ): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`;
-    const cacheKey = `${options.method || 'GET'}:${url}`;
+    const method = options.method || 'GET';
+    const cacheKey = `${method}:${url}`;
 
     // Check cache first
-    if (useCache) {
+    if (useCache && method === 'GET') {
       const cached = this.cache.get(cacheKey);
       if (cached) {
         console.log(`📦 Cache hit: ${endpoint}`);
@@ -114,40 +110,36 @@ class BibleApiClient {
       return this.pendingRequests.get(cacheKey) as Promise<T>;
     }
 
-    // Create abort controller for timeout
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT);
-
     const requestPromise = (async () => {
       try {
-        const response = await fetch(url, {
-          ...options,
-          signal: controller.signal,
+        // Use CapacitorHttp instead of fetch
+        const response = await CapacitorHttp.request({
+          url,
+          method,
           headers: {
             'Content-Type': 'application/json',
             ...options.headers,
           },
+          data: options.body ? JSON.parse(options.body) : undefined,
+          connectTimeout: REQUEST_TIMEOUT,
+          readTimeout: REQUEST_TIMEOUT,
         });
 
-        clearTimeout(timeoutId);
-
-        if (!response.ok) {
-          throw new Error(`API Error: ${response.status} ${response.statusText}`);
+        if (response.status < 200 || response.status >= 300) {
+          throw new Error(`API Error: ${response.status} ${response.statusText || ''}`);
         }
 
-        const data = await response.json();
+        const data = response.data;
 
         // Cache successful responses
-        if (useCache && data.success !== false) {
+        if (useCache && method === 'GET' && data.success !== false) {
           this.cache.set(cacheKey, data);
         }
 
         return data;
       } catch (error: any) {
-        clearTimeout(timeoutId);
-
         // Retry logic for network errors
-        if (retries > 0 && (error.name === 'AbortError' || error.message.includes('fetch'))) {
+        if (retries > 0 && (error.message?.includes('timeout') || error.message?.includes('network'))) {
           console.log(`🔄 Retrying request (${MAX_RETRIES - retries + 1}/${MAX_RETRIES}): ${endpoint}`);
           await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
           return this.request(endpoint, options, useCache, retries - 1);
@@ -163,9 +155,7 @@ class BibleApiClient {
     return requestPromise;
   }
 
-  /**
-   * Get Verse of the Day
-   */
+  //Get Verse of the Day 
   async getVerseOfTheDay(random: boolean = false) {
     try {
       const timestamp = Date.now();
@@ -190,9 +180,7 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Get a Bible chapter
-   */
+  //Get a Bible chapter
   async getChapter(translation: string, book: string, chapter: number) {
     try {
       const endpoint = `/bible/${translation}/${book}/${chapter}`;
@@ -205,9 +193,7 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Get a specific verse
-   */
+  // Get a specific verse  
   async getVerse(translation: string, book: string, chapter: number, verse: number) {
     try {
       const endpoint = `/bible/${translation}/${book}/${chapter}/${verse}`;
@@ -220,9 +206,7 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Search the Bible
-   */
+ //Search the Bible 
   async search(
     query: string,
     translation: string = 'KJV'
@@ -240,9 +224,7 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Get available translations
-   */
+  //Get available translations
   async getTranslations(): Promise<BibleApiResponse> {
     try {
       const response = await this.request<BibleApiResponse>('/bible/translations');
@@ -256,32 +238,26 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Clear all cached data
-   */
+ // Clear all cached data 
   clearCache(): void {
     this.cache.clear();
     console.log('🧹 API cache cleared');
   }
 
-  /**
-   * Check if API is reachable
-   */
+   // Check if API is reachable - also use CapacitorHttp  
   async healthCheck(): Promise<boolean> {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`, {
-        method: 'GET',
-        signal: AbortSignal.timeout(5000),
+      const response = await CapacitorHttp.get({
+        url: `${API_BASE_URL}/health`,
+        connectTimeout: 5000,
       });
-      return response.ok;
+      return response.status === 200;
     } catch {
       return false;
     }
   }
 
-  /**
-   * Sync offline changes (batch operation)
-   */
+   // Sync offline changes (batch operation)
   async syncOfflineData(operations: Array<{ type: string; data: any }>): Promise<BibleApiResponse> {
     try {
       const response = await this.request<BibleApiResponse>('/sync', {

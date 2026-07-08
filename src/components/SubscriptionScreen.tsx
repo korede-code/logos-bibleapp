@@ -25,7 +25,7 @@ const SubscriptionScreen: React.FC = () => {
           <div className="text-center max-w-sm">
             <Crown size={48} className="mx-auto mb-4" style={{ color: theme.accent }} />
             <h2 className="text-xl font-bold mb-2" style={{ color: theme.text }}>Go Pro!</h2>
-            <p className="text-sm mb-6" style={{ color: theme.textMuted }}>Upgrade to Logos Pro for unlimited access to all features.</p>
+            <p className="text-sm mb-6" style={{ color: theme.textMuted }}>Upgrade to Synthesis Pro for unlimited access to all features.</p>
             <button
               onClick={() => setShowProModal(true)}
               className="px-6 py-3 rounded-xl font-semibold"
@@ -68,7 +68,7 @@ const SubscriptionScreen: React.FC = () => {
             <span className="text-xs font-bold uppercase tracking-wider" style={{ color: theme.accent }}>Current Plan</span>
             <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: '#4CAF5020', color: '#4CAF50' }}>Active</span>
           </div>
-          <h2 className="text-2xl font-bold mb-2" style={{ color: theme.text }}>Logos Pro Monthly</h2>
+          <h2 className="text-2xl font-bold mb-2" style={{ color: theme.text }}>Synthesis Pro Monthly</h2>
           <p className="text-sm mb-4" style={{ color: theme.textMuted }}>Next billing on June 15, 2025</p>
           <div className="flex items-center gap-2 mb-4">
             <CreditCard size={14} style={{ color: theme.textMuted }} />

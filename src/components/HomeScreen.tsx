@@ -21,15 +21,33 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { READING_PLANS, BIBLE_BOOKS } from '../data/bibleData';
-import { getTheme } from '../utils/themeUtils';
 import { format } from 'date-fns';
 import { bibleApi } from '../services/bibleApiClient';
 import ProUpgradeModal from './ProUpgradeModal';
 import { auth } from '../config/firebase';
 
-const HomeScreen: React.FC = () => {
+interface HomeScreenProps {
+  theme?: any;
+  onClose?: () => void;
+  navigate?: (screen: string) => void;
+}
+
+const defaultTheme = {
+  bg: '#1a1a1a',
+  card: '#2a2a2a',
+  surface: '#333333',
+  text: '#ffffff',
+  textMuted: '#aaaaaa',
+  textFaint: '#777777',
+  accent: '#488AFF',
+  border: '#444444',
+  warning: '#f59e0b'
+};
+
+const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => {
+  const t = theme || defaultTheme; // add fallback
   const {
-    navigate, readerSettings, readingPosition, streak,
+    readerSettings, readingPosition, streak,
     activePlans, highlights, bookmarks,
     notes, isPro, setReadingPosition,
     realVerseOfTheDay,
@@ -39,7 +57,8 @@ const HomeScreen: React.FC = () => {
     isOnline
   } = useAppStore();
 
-  const theme = getTheme(readerSettings.theme);
+  
+  //const theme = getTheme(readerSettings.theme);
   const [greeting, setGreeting] = useState('');
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening' | 'night'>('morning');
   const [refreshing, setRefreshing] = useState(false);
@@ -53,6 +72,7 @@ const HomeScreen: React.FC = () => {
     });
     return () => unsubscribe();
   }, []);
+
 
   // Fetch real verse of the day on mount
   useEffect(() => {
@@ -193,7 +213,7 @@ const HomeScreen: React.FC = () => {
               <span className="font-medium">{greeting}</span>
             </div>
             <h1 className="text-2xl font-bold" style={{ color: theme.text, fontFamily: 'Crimson Pro, serif', letterSpacing: '-0.01em' }}>
-              Study Bible
+              Synthesis Bible
             </h1>
           </div>
           <div className="flex items-center gap-3">
@@ -492,7 +512,7 @@ const HomeScreen: React.FC = () => {
           <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.textMuted }}>✦ Your Stats</h2>
           <div className="grid grid-cols-2 gap-3">
             {[
-              { icon: <Star size={18} />, label: 'Highlights', value: highlights.length, action: () => navigate('bookmarks') },
+              { icon: <Star size={18} />, label: 'Highlights', value: highlights.length, action: () => navigate('highlights') },
               { icon: <Bookmark size={18} />, label: 'Bookmarks', value: bookmarks.length, action: () => navigate('bookmarks') },
               { icon: <Target size={18} />, label: 'Notes', value: notes.length, action: () => navigate('notes') },
               { icon: <TrendingUp size={18} />, label: 'Days Read', value: streak.totalDaysRead, action: () => navigate('progress') },

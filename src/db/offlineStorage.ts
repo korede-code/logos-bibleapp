@@ -241,18 +241,14 @@ class OfflineStorageService {
     return this.initPromise;
   }
 
-  /**
-   * Ensure database is initialized before operations
-   */
+   // Ensure database is initialized before operations
   private async ensureDB(): Promise<IDBDatabase> {
     await this.init();
     if (!this.db) throw new Error('Database not initialized');
     return this.db;
   }
 
-  /**
-   * Generic get operation
-   */
+   // Generic get operation
   async get<T>(storeName: StoreName, key: string): Promise<T | null> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -265,9 +261,7 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Generic put operation
-   */
+   // Generic put operation
   async put<T>(storeName: StoreName, value: T, key?: string): Promise<void> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -280,9 +274,7 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Generic delete operation
-   */
+   // Generic delete operation
   async delete(storeName: StoreName, key: string): Promise<void> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -295,9 +287,7 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Get all items from a store (with optional index filtering)
-   */
+   // Get all items from a store (with optional index filtering)
   async getAll<T>(storeName: StoreName, indexName?: string, indexValue?: any): Promise<T[]> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -317,10 +307,7 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Get all verses (for offline search)
-   */
-  // Add to offlineStorage.ts
+   // Get all verses (for offline search)
   async getAllVerses(): Promise<StoredVerse[]> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -333,26 +320,18 @@ class OfflineStorageService {
     });
   }
 
-  // ============ Verse Methods ============
-
-  /**
-   * Save a verse to offline storage
-   */
+   // Save a verse to offline storage
   async saveVerse(verse: StoredVerse): Promise<void> {
     await this.put(STORES.VERSES, verse);
   }
 
-  /**
-   * Get a verse by ID
-   */
+   // Get a verse by ID
   async getVerse(translation: string, book: string, chapter: number, verse: number): Promise<StoredVerse | null> {
     const id = `${translation}:${book}:${chapter}:${verse}`;
     return this.get<StoredVerse>(STORES.VERSES, id);
   }
 
-  /**
-   * Save an entire chapter
-   */
+   // Save an entire chapter
   async saveChapter(translation: string, book: string, chapter: number, verses: StoredVerse[]): Promise<void> {
     const id = `${translation}:${book}:${chapter}`;
     const chapterData: StoredChapter = {
@@ -367,9 +346,7 @@ class OfflineStorageService {
     await this.put(STORES.CHAPTERS, chapterData);
   }
 
-  /**
-   * Get a chapter from offline storage
-   */
+   // Get a chapter from offline storage
   async getChapter(translation: string, book: string, chapter: number): Promise<StoredChapter | null> {
     const id = `${translation}:${book}:${chapter}`;
     const data = await this.get<StoredChapter>(STORES.CHAPTERS, id);
@@ -383,121 +360,83 @@ class OfflineStorageService {
     return data;
   }
 
-  /**
-   * Get verses by book (for search)
-   */
+   // Get verses by book (for search)
   async getVersesByBook(translation: string, book: string): Promise<StoredVerse[]> {
     const allVerses = await this.getAll<StoredVerse>(STORES.VERSES);
     return allVerses.filter(v => v.translation === translation && v.book === book);
   }
 
-  // ============ Highlight Methods ============
-
-  /**
-   * Save a highlight
-   */
+   // Save a highlight
   async saveHighlight(highlight: StoredHighlight): Promise<void> {
     await this.put(STORES.HIGHLIGHTS, highlight);
   }
 
-  /**
-   * Get all highlights for a verse
-   */
+   // Get all highlights for a verse
   async getHighlightsForVerse(verseId: string): Promise<StoredHighlight[]> {
     const allHighlights = await this.getAll<StoredHighlight>(STORES.HIGHLIGHTS);
     return allHighlights.filter(h => h.verseId === verseId);
   }
 
-  /**
-   * Get all highlights for a chapter
-   */
+   // Get all highlights for a chapter
   async getHighlightsForChapter(bookId: number, chapter: number): Promise<StoredHighlight[]> {
     const allHighlights = await this.getAll<StoredHighlight>(STORES.HIGHLIGHTS);
     return allHighlights.filter(h => h.bookId === bookId && h.chapter === chapter);
   }
 
-  /**
-   * Delete a highlight
-   */
+   // Delete a highlight
   async deleteHighlight(id: string): Promise<void> {
     await this.delete(STORES.HIGHLIGHTS, id);
   }
 
-  /**
-   * Get unsynced highlights
-   */
+   // Get unsynced highlights
   async getUnsyncedHighlights(): Promise<StoredHighlight[]> {
     const allHighlights = await this.getAll<StoredHighlight>(STORES.HIGHLIGHTS);
     return allHighlights.filter(h => !h.synced);
   }
 
-  // ============ Note Methods ============
-
-  /**
-   * Save a note
-   */
+   // Save a note
   async saveNote(note: StoredNote): Promise<void> {
     await this.put(STORES.NOTES, note);
   }
 
-  /**
-   * Get note by ID
-   */
+   // Get note by ID
   async getNote(id: string): Promise<StoredNote | null> {
     return this.get<StoredNote>(STORES.NOTES, id);
   }
 
-  /**
-   * Get all notes for a verse
-   */
+   // Get all notes for a verse
   async getNotesForVerse(verseId: string): Promise<StoredNote[]> {
     const allNotes = await this.getAll<StoredNote>(STORES.NOTES);
     return allNotes.filter(n => n.verseId === verseId);
   }
 
-  /**
-   * Delete a note
-   */
+   // Delete a note
   async deleteNote(id: string): Promise<void> {
     await this.delete(STORES.NOTES, id);
   }
 
-  /**
-   * Get unsynced notes
-   */
+   // Get unsynced notes
   async getUnsyncedNotes(): Promise<StoredNote[]> {
     const allNotes = await this.getAll<StoredNote>(STORES.NOTES);
     return allNotes.filter(n => !n.synced);
   }
 
-  // ============ Bookmark Methods ============
-
-  /**
-   * Save a bookmark
-   */
+   // Save a bookmark
   async saveBookmark(bookmark: StoredBookmark): Promise<void> {
     await this.put(STORES.BOOKMARKS, bookmark);
   }
 
-  /**
-   * Get all bookmarks
-   */
+   // Get all bookmarks
   async getAllBookmarks(): Promise<StoredBookmark[]> {
     return this.getAll<StoredBookmark>(STORES.BOOKMARKS);
   }
 
-  /**
-   * Delete a bookmark
-   */
+   // Delete a bookmark
   async deleteBookmark(id: string): Promise<void> {
     await this.delete(STORES.BOOKMARKS, id);
   }
 
-  // ============ Sync Queue Methods ============
-
-  /**
-   * Add item to sync queue
-   */
+   // Add item to sync queue
   async addToSyncQueue(item: Omit<SyncQueueItem, 'id' | 'retryCount' | 'timestamp'>): Promise<number> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -516,24 +455,18 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Get all pending sync items
-   */
+   // Get all pending sync items
   async getPendingSyncItems(): Promise<SyncQueueItem[]> {
     const items = await this.getAll<SyncQueueItem>(STORES.SYNC_QUEUE);
     return items.sort((a, b) => a.timestamp - b.timestamp);
   }
 
-  /**
-   * Remove item from sync queue
-   */
+   // Remove item from sync queue
   async removeFromSyncQueue(id: number): Promise<void> {
     await this.delete(STORES.SYNC_QUEUE, id.toString());
   }
 
-  /**
-   * Update retry count for sync item
-   */
+   // Update retry count for sync item
   async incrementRetryCount(id: number): Promise<void> {
     const item = await this.get<SyncQueueItem>(STORES.SYNC_QUEUE, id.toString());
     if (item) {
@@ -542,9 +475,7 @@ class OfflineStorageService {
     }
   }
 
-  /**
-   * Clear all synced items from queue
-   */
+   // Clear all synced items from queue
   async clearSyncedQueue(): Promise<void> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -556,51 +487,33 @@ class OfflineStorageService {
     });
   }
 
-  // ============ Prayer Methods ============
-
-  /**
-   * Save a prayer
-   */
+  // Save a prayer
   async savePrayer(prayer: StoredPrayer): Promise<void> {
     await this.put(STORES.PRAYERS, prayer);
   }
 
-  /**
-   * Get all prayers
-   */
+   // Get all prayers
   async getAllPrayers(): Promise<StoredPrayer[]> {
     return this.getAll<StoredPrayer>(STORES.PRAYERS);
   }
 
-  /**
-   * Delete a prayer
-   */
+   // Delete a prayer
   async deletePrayer(id: string): Promise<void> {
     await this.delete(STORES.PRAYERS, id);
   }
 
-  // ============ Reading History Methods ============
-
-  /**
-   * Save reading session
-   */
+   // Save reading session
   async saveReadingSession(session: StoredReadingHistory): Promise<void> {
     await this.put(STORES.READING_HISTORY, session);
   }
 
-  /**
-   * Get reading history for a date range
-   */
+   // Get reading history for a date range
   async getReadingHistory(startDate: string, endDate: string): Promise<StoredReadingHistory[]> {
     const allHistory = await this.getAll<StoredReadingHistory>(STORES.READING_HISTORY);
     return allHistory.filter(h => h.date >= startDate && h.date <= endDate);
   }
 
-  // ============ Maintenance Methods ============
-
-  /**
-   * Clear expired cache
-   */
+   // Clear expired cache
   async clearExpiredCache(): Promise<number> {
     const db = await this.ensureDB();
     return new Promise((resolve, reject) => {
@@ -628,9 +541,7 @@ class OfflineStorageService {
     });
   }
 
-  /**
-   * Get storage usage info
-   */
+   // Get storage usage info
   async getStorageInfo(): Promise<{ used: number; limit: number; percentUsed: number }> {
     if ('storage' in navigator && 'estimate' in navigator.storage) {
       const estimate = await navigator.storage.estimate();
@@ -643,9 +554,7 @@ class OfflineStorageService {
     return { used: 0, limit: 0, percentUsed: 0 };
   }
 
-  /**
-   * Clear all data (logout)
-   */
+   // Clear all data (logout)
   async clearAllData(): Promise<void> {
     const db = await this.ensureDB();
     const stores = Object.values(STORES);

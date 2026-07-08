@@ -16,9 +16,10 @@ import React, { useState, useRef, useCallback, useEffect } from 'react';
 import {
   ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
-  Columns, AlignJustify, Eye, EyeOff, Link2, MessageSquare,
-  WifiOff, RefreshCw, Search
+  Columns, AlignJustify, Eye, EyeOff, Link2, Volume2, MessageSquare,
+  WifiOff, RefreshCw, Search, Lightbulb
 } from 'lucide-react';
+import AudioPlayer from './AudioPlayer';
 import { useAppStore } from '../store/appStore';
 import { useBibleChapter } from '../hooks/useRealBibleData';
 import { BIBLE_BOOKS, CROSS_REFERENCES } from '../data/bibleData';
@@ -27,6 +28,9 @@ import AnnotationToolbar from './AnnotationToolbar';
 import ReaderSettingsPanel from './ReaderSettingsPanel';
 import BookNavigator from './BookNavigator';
 import { offlineStorage } from '../services/offlineStorage';
+import WordStudyPanel from './WordStudyPanel';
+
+
 
 // ─── Red Letter Words/Phrases (from Jesus' direct speech) ─────────────────────
 
@@ -445,6 +449,25 @@ const ReaderScreen: React.FC = () => {
   } = useAppStore();
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
+  const [showAudioPlayer, setShowAudioPlayer] = useState(false);
+  const theme = getTheme(readerSettings.theme);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showBookNav, setShowBookNav] = useState(false);
+  const [showWordStudy, setShowWordStudy] = useState(false);
+  const [showChapterNav, setShowChapterNav] = useState(false);
+  const [showVerseNav, setShowVerseNav] = useState(false);
+  const [showQuickNav, setShowQuickNav] = useState(false);
+  const [showBookFloatingButton, setShowBookFloatingButton] = useState(true);
+  const [totalVerses, setTotalVerses] = useState(0);
+  const [pendingChapter, setPendingChapter] = useState<number | null>(null);
+  const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
+  const [hasRecordedSession, setHasRecordedSession] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollOffset = useRef(0);
+  const mainContentRef = useRef<HTMLDivElement>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+
+  
 
   const { 
     verses: apiVerses, 
@@ -504,19 +527,6 @@ const ReaderScreen: React.FC = () => {
     setTimeout(() => toast.remove(), 3000);
   };
 
-
-
-  // Debug logs
-  useEffect(() => {
-    console.log('📖 ReaderScreen: apiVerses state:', {
-      type: typeof apiVerses,
-      isArray: Array.isArray(apiVerses),
-      length: apiVerses?.length,
-      firstVerse: apiVerses?.[0],
-      allVerses: apiVerses
-    });
-  }, [apiVerses]);
-
   useEffect(() => {
     console.log('📖 ReaderScreen: isLoading:', isLoading);
   }, [isLoading]);
@@ -524,24 +534,6 @@ const ReaderScreen: React.FC = () => {
   useEffect(() => {
     console.log('📖 ReaderScreen: error:', error);
   }, [error]);
-
-
-  const theme = getTheme(readerSettings.theme);
-  const [showSettings, setShowSettings] = useState(false);
-  const [showBookNav, setShowBookNav] = useState(false);
-  const [showChapterNav, setShowChapterNav] = useState(false);
-  const [showVerseNav, setShowVerseNav] = useState(false);
-  const [showQuickNav, setShowQuickNav] = useState(false);
-  const [showBookFloatingButton, setShowBookFloatingButton] = useState(true);
-  const [totalVerses, setTotalVerses] = useState(0);
-  const [pendingChapter, setPendingChapter] = useState<number | null>(null);
-  const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
-  const [hasRecordedSession, setHasRecordedSession] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const scrollOffset = useRef(0);
-  const mainContentRef = useRef<HTMLDivElement>(null);
-  
-  
 
   // Update total verses when chapter loads
   useEffect(() => {
@@ -799,24 +791,47 @@ const ReaderScreen: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Download for offline button */}
-            <button
-              onClick={downloadCurrentBook}
-              className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" 
-              style={{ color: theme.textMuted }}
-              title="Download book for offline reading"
-            >
-              <Download size={18} />
-            </button>
-            <button onClick={() => refetch()} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: theme.textMuted }} disabled={isLoading}>
-              <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
-            </button>
+            {/* Always visible */}
             <button onClick={toggleBookmark} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: isCurrentBookmarked ? theme.accent : theme.textMuted }}>
               <Bookmark size={18} fill={isCurrentBookmarked ? theme.accent : 'none'} />
             </button>
-            <button onClick={() => setShowSettings(true)} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: theme.textMuted }}>
-              <Settings2 size={18} />
-            </button>
+
+            {/* More menu for extra buttons */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowMoreMenu(!showMoreMenu)}
+                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+                style={{ color: showMoreMenu ? theme.accent : theme.textMuted }}
+              >
+                <Settings2 size={18} />
+              </button>
+              
+              {showMoreMenu && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
+                  <div 
+                    className="absolute top-full right-0 mt-2 z-50 w-48 rounded-xl shadow-xl p-2"
+                    style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
+                  >
+                    <button onClick={() => { setShowAudioPlayer(!showAudioPlayer); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                      <Volume2 size={16} /> Audio Bible
+                    </button>
+                    <button onClick={() => { setShowWordStudy(true); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                      <Lightbulb size={16} /> Word Study
+                    </button>
+                    <button onClick={() => { downloadCurrentBook(); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                      <Download size={16} /> Download Book
+                    </button>
+                    <button onClick={() => { refetch(); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                      <RefreshCw size={16} /> Refresh
+                    </button>
+                    <button onClick={() => { setShowSettings(true); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                      <Settings2 size={16} /> Settings
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </nav>
       )}
@@ -1162,6 +1177,29 @@ const ReaderScreen: React.FC = () => {
           theme={theme}
         />
       )}
+
+      {showWordStudy && (
+        <WordStudyPanel
+          isOpen={showWordStudy}
+          onClose={() => setShowWordStudy(false)}
+          selectedVerse={`${readingPosition.book} ${readingPosition.chapter}:${readingPosition.verse}`}
+          theme={theme}
+        />
+      )}
+
+      {showAudioPlayer && (
+        <AudioPlayer
+          verses={displayVerses}
+          currentVerse={readingPosition.verse}
+          isVisible={showAudioPlayer}
+          onClose={() => {
+            window.speechSynthesis?.cancel();
+            setShowAudioPlayer(false);
+          }}
+          theme={theme}
+        />
+      )}
+      
     </div>
   );
 };

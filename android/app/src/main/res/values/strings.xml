@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">Study Bible</string>
-    <string name="title_activity_main">Study Bible</string>
+    <string name="app_name">Synthesis Bible</string>
+    <string name="title_activity_main">Synthesis Bible</string>
     <string name="package_name">com.logosdaily.app</string>
     <string name="custom_url_scheme">com.logosdaily.app</string>
 

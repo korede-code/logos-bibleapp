@@ -9,6 +9,8 @@
  */
 
 import React, { useState } from 'react';
+import { Share } from '@capacitor/share';
+import { Capacitor } from '@capacitor/core';
 import { useAppStore } from '../store/appStore';
 import { useBibleVerse } from '../hooks/useRealBibleData';
 import { getTheme } from '../utils/themeUtils';
@@ -232,10 +234,75 @@ const BookmarkCard: React.FC<{
     setIsDeleting(false);
   };
 
-  const handleShare = () => {
-    const text = `${bookmark.book} ${bookmark.chapter}:${bookmark.verse}\n"${verse?.text.substring(0, 200)}..."\n\nShared from Logos Daily Bible App`;
-    navigator.clipboard?.writeText(text);
-    alert('Verse copied to clipboard!');
+  const handleShare = async (e?: React.MouseEvent) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    
+    const reference = `${bookmark.book} ${bookmark.chapter}:${bookmark.verse}`;
+    const verseText = verse?.text || 'Verse text not available';
+    const shareText = `${reference}\n\n"${verseText}"\n\nShared from Synthesis Bible App`;
+
+    // Use Capacitor Share on native, fallback to Web Share API / clipboard on web
+    if (Capacitor.isNativePlatform()) {
+      try {
+        await Share.share({
+          title: reference,
+          text: shareText,
+          dialogTitle: 'Share verse',
+        });
+        return;
+      } catch (err: any) {
+        if (err.message?.includes('cancel')) return; // User cancelled
+        console.error('Share failed:', err);
+      }
+    }
+
+    // Web fallback: Try navigator.share first
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: reference,
+          text: shareText,
+        });
+        return;
+      } catch (err: any) {
+        if (err.name === 'AbortError') return;
+      }
+    }
+
+    // Final fallback: Copy to clipboard
+    try {
+      await navigator.clipboard.writeText(shareText);
+      showToast('✓ Verse copied to clipboard!');
+    } catch {
+      // Manual fallback for old browsers
+      const textarea = document.createElement('textarea');
+      textarea.value = shareText;
+      textarea.style.position = 'fixed';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+      showToast('✓ Verse copied!');
+    }
+  };
+
+  // Helper for toast
+  const showToast = (message: string) => {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: #4CAF50; color: white; padding: 12px 24px;
+      border-radius: 12px; z-index: 9999; font-size: 14px; font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+      animation: slideUp 0.3s ease;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2000);
   };
 
   return (

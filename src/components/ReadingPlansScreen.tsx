@@ -1,12 +1,4 @@
-/**
- * Logos Daily — Reading Plans Screen
- * ====================================
- * Browse and track Bible reading plans with:
- * - Active plans progress tracking
- * - Daily reading assignments
- * - Real Bible content from API
- * - Pro plan restrictions with working upgrade buttons
- */
+// src/components/ReadingPlansScreen.tsx - COMPLETE FIXED VERSION
 
 import React, { useState, useEffect } from 'react';
 import { useAppStore } from '../store/appStore';
@@ -14,136 +6,133 @@ import { useBibleChapter } from '../hooks/useRealBibleData';
 import { getTheme } from '../utils/themeUtils';
 import { BIBLE_BOOKS } from '../data/bibleData';
 import { 
-  ChevronRight, 
-  BookOpen, 
-  Calendar, 
-  CheckCircle, 
-  Loader2, 
-  ArrowLeft,
-  Target,
-  Flame,
-  WifiOff,
-  RefreshCw,
-  Clock,
-  Award,
-  TrendingUp,
-  Star,
-  Crown,
-  Lock
+  ChevronRight, BookOpen, Calendar, CheckCircle, Loader2, ArrowLeft,
+  Target, WifiOff, RefreshCw, Star, Crown, Lock
 } from 'lucide-react';
 import ProUpgradeModal from './ProUpgradeModal';
 
-// Reading Plans Data
-const READING_PLANS_DATA = [
-  {
-    id: 'bible-in-year',
-    name: 'Bible in a Year',
-    icon: '📖',
-    duration: 365,
-    description: 'Read through the entire Bible in one year with daily readings from the Old and New Testaments.',
-    category: 'Comprehensive',
-    isPro: false,
-    readings: generateReadings(365)
-  },
-  {
-    id: 'psalms-proverbs',
-    name: 'Psalms & Proverbs',
-    icon: '📜',
-    duration: 31,
-    description: 'A chapter from Psalms and a chapter from Proverbs each day for a month.',
-    category: 'Wisdom',
-    isPro: false,
-    readings: generatePsalmsProverbsReadings()
-  },
-  {
-    id: 'nt-90-days',
-    name: 'New Testament in 90 Days',
-    icon: '✝️',
-    duration: 90,
-    description: 'Journey through all 27 books of the New Testament in 90 days.',
-    category: 'New Testament',
-    isPro: true,
-    readings: generateNTReadings()
-  },
-  {
-    id: 'jesus-miracles',
-    name: 'Jesus\' Miracles',
-    icon: '✨',
-    duration: 21,
-    description: 'A thematic 21-day study of all the recorded miracles of Jesus across all four gospels.',
-    category: 'Thematic',
-    isPro: true,
-    readings: generateMiraclesReadings()
-  },
-  {
-    id: 'chronological',
-    name: 'Chronological Bible',
-    icon: '⏳',
-    duration: 365,
-    description: 'Read the Bible in the order events actually occurred, blending books for historical context.',
-    category: 'Historical',
-    isPro: true,
-    readings: generateReadings(365)
-  },
-  {
-    id: 'sermon-on-mount',
-    name: 'Sermon on the Mount',
-    icon: '🏔️',
-    duration: 7,
-    description: 'An intensive 7-day meditation on the greatest sermon ever preached (Matthew 5-7).',
-    category: 'Thematic',
-    isPro: true,
-    readings: generateSermonReadings()
-  }
-];
+// Complete chapters per book
+const BOOK_CHAPTERS: Record<string, number> = {
+  'Genesis': 50, 'Exodus': 40, 'Leviticus': 27, 'Numbers': 36, 'Deuteronomy': 34,
+  'Joshua': 24, 'Judges': 21, 'Ruth': 4, '1 Samuel': 31, '2 Samuel': 24,
+  '1 Kings': 22, '2 Kings': 25, '1 Chronicles': 29, '2 Chronicles': 36,
+  'Ezra': 10, 'Nehemiah': 13, 'Esther': 10, 'Job': 42,
+  'Psalms': 150, 'Proverbs': 31, 'Ecclesiastes': 12, 'Song of Solomon': 8,
+  'Isaiah': 66, 'Jeremiah': 52, 'Lamentations': 5, 'Ezekiel': 48, 'Daniel': 12,
+  'Hosea': 14, 'Joel': 3, 'Amos': 9, 'Obadiah': 1, 'Jonah': 4, 'Micah': 7,
+  'Nahum': 3, 'Habakkuk': 3, 'Zephaniah': 3, 'Haggai': 2, 'Zechariah': 14, 'Malachi': 4,
+  'Matthew': 28, 'Mark': 16, 'Luke': 24, 'John': 21, 'Acts': 28,
+  'Romans': 16, '1 Corinthians': 16, '2 Corinthians': 13, 'Galatians': 6, 'Ephesians': 6,
+  'Philippians': 4, 'Colossians': 4, '1 Thessalonians': 5, '2 Thessalonians': 3,
+  '1 Timothy': 6, '2 Timothy': 4, 'Titus': 3, 'Philemon': 1, 'Hebrews': 13,
+  'James': 5, '1 Peter': 5, '2 Peter': 3, '1 John': 5, '2 John': 1, '3 John': 1, 'Jude': 1,
+  'Revelation': 22
+};
 
-// Helper functions to generate readings
-function generateReadings(days: number) {
-  const readings = [];
-  const books = ['Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy', 'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings', '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians', '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'];
+// Generate readings with 3-4 chapters per day
+function generateBibleInYearReadings() {
+  const readings: any[] = [];
+  const books = Object.keys(BOOK_CHAPTERS);
   
-  for (let i = 1; i <= days; i++) {
-    const bookIndex = Math.floor((i - 1) * books.length / days);
-    readings.push({
-      day: i,
-      book: books[bookIndex],
-      chapter: (i % 30) + 1,
-      startVerse: 1,
-      endVerse: 20
-    });
+  // Collect ALL chapters as a flat list
+  const allChapters: Array<{ book: string; chapter: number }> = [];
+  for (const book of books) {
+    const numChapters = BOOK_CHAPTERS[book];
+    for (let ch = 1; ch <= numChapters; ch++) {
+      allChapters.push({ book, chapter: ch });
+    }
   }
+  
+  // Distribute across 365 days (3-4 chapters per day)
+  const totalChapters = allChapters.length; // 1189 chapters
+  const chaptersPerDay = totalChapters / 365; // ~3.26 chapters per day
+  
+  let chapterIndex = 0;
+  for (let day = 1; day <= 365; day++) {
+    const startIndex = chapterIndex;
+    const numChaptersToday = Math.round((day * chaptersPerDay) - chapterIndex);
+    const endIndex = Math.min(startIndex + numChaptersToday, totalChapters);
+    
+    for (let i = startIndex; i < endIndex; i++) {
+      if (allChapters[i]) {
+        readings.push({
+          day: day,
+          book: allChapters[i].book,
+          chapter: allChapters[i].chapter,
+          title: `${allChapters[i].book} ${allChapters[i].chapter}`,
+        });
+      }
+    }
+    
+    chapterIndex = endIndex;
+  }
+  
   return readings;
 }
 
 function generatePsalmsProverbsReadings() {
-  const readings = [];
-  for (let i = 1; i <= 31; i++) {
-    readings.push({
-      day: i,
-      book: 'Psalms',
-      chapter: i,
-      startVerse: 1,
-      endVerse: 20,
-      title: `Psalm ${i}`
-    });
+  const readings: any[] = [];
+  
+  // Day 1-31: One Psalm + One Proverb each day
+  for (let day = 1; day <= 31; day++) {
+    // Psalm chapter (1-31)
+    if (day <= 150) {
+      readings.push({
+        day: day,
+        book: 'Psalms',
+        chapter: day,
+        title: `Psalm ${day}`,
+      });
+    }
+    // Proverbs chapter (1-31)
+    if (day <= 31) {
+      readings.push({
+        day: day,
+        book: 'Proverbs',
+        chapter: day,
+        title: `Proverbs ${day}`,
+      });
+    }
   }
+  
   return readings;
 }
 
-function generateNTReadings() {
+function generateNT90Readings() {
+  const readings: any[] = [];
   const ntBooks = ['Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians', '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James', '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'];
-  const readings = [];
-  for (let i = 1; i <= 90; i++) {
-    const bookIndex = Math.floor((i - 1) * ntBooks.length / 90);
-    readings.push({
-      day: i,
-      book: ntBooks[bookIndex],
-      chapter: ((i - 1) % 20) + 1,
-      startVerse: 1,
-      endVerse: 15,
-      title: `${ntBooks[bookIndex]} ${((i - 1) % 20) + 1}`
-    });
+  
+  const allChapters: Array<{ book: string; chapter: number }> = [];
+  for (const book of ntBooks) {
+    const numChapters = BOOK_CHAPTERS[book] || 1;
+    for (let ch = 1; ch <= numChapters; ch++) {
+      allChapters.push({ book, chapter: ch });
+    }
   }
+  
+  const totalChapters = allChapters.length;
+  const chaptersPerDay = totalChapters / 90;
+  
+  let chapterIndex = 0;
+  for (let day = 1; day <= 90; day++) {
+    const startIndex = chapterIndex;
+    const numChaptersToday = Math.round((day * chaptersPerDay) - chapterIndex);
+    const endIndex = Math.min(startIndex + numChaptersToday, totalChapters);
+    
+    for (let i = startIndex; i < endIndex; i++) {
+      if (allChapters[i]) {
+        readings.push({
+          day: day,
+          book: allChapters[i].book,
+          chapter: allChapters[i].chapter,
+          title: `${allChapters[i].book} ${allChapters[i].chapter}`,
+        });
+      }
+    }
+    
+    chapterIndex = endIndex;
+  }
+  
   return readings;
 }
 
@@ -197,7 +186,71 @@ function generateSermonReadings() {
   return readings;
 }
 
-// Plan Card Component
+// Reading Plans Data
+const READING_PLANS_DATA = [
+  {
+    id: 'bible-in-year',
+    name: 'Bible in a Year',
+    icon: '📖',
+    duration: 365,
+    description: 'Read through the entire Bible in one year with 3-4 chapters per day.',
+    category: 'Comprehensive',
+    isPro: false,
+    readings: generateBibleInYearReadings()
+  },
+  {
+    id: 'psalms-proverbs',
+    name: 'Psalms & Proverbs',
+    icon: '📜',
+    duration: 31,
+    description: 'One chapter from Psalms and Proverbs each day for a month.',
+    category: 'Wisdom',
+    isPro: false,
+    readings: generatePsalmsProverbsReadings()
+  },
+  {
+    id: 'nt-90-days',
+    name: 'New Testament in 90 Days',
+    icon: '✝️',
+    duration: 90,
+    description: 'Journey through all 27 books of the New Testament in 90 days.',
+    category: 'New Testament',
+    isPro: true,
+    readings: generateNT90Readings()
+  },
+  {
+    id: 'jesus-miracles',
+    name: 'Jesus\' Miracles',
+    icon: '✨',
+    duration: 21,
+    description: 'A thematic 21-day study of all recorded miracles of Jesus.',
+    category: 'Thematic',
+    isPro: true,
+    readings: generateMiraclesReadings()
+  },
+  {
+    id: 'chronological',
+    name: 'Chronological Bible',
+    icon: '⏳',
+    duration: 365,
+    description: 'Read the Bible in chronological order of events.',
+    category: 'Historical',
+    isPro: true,
+    readings: generateBibleInYearReadings() // Uses same chapter distribution
+  },
+  {
+    id: 'sermon-on-mount',
+    name: 'Sermon on the Mount',
+    icon: '🏔️',
+    duration: 7,
+    description: 'An intensive 7-day meditation on Matthew 5-7.',
+    category: 'Thematic',
+    isPro: true,
+    readings: generateSermonReadings()
+  }
+];
+
+// Plan Card Component (same as before)
 const PlanCard: React.FC<{
   plan: any;
   activePlan?: any;
@@ -283,8 +336,7 @@ const PlanCard: React.FC<{
     </div>
   );
 };
-
-// Plan Detail View Component
+// PlanDetailView Component - NOW SHOWS ALL VERSES
 const PlanDetailView: React.FC<{
   plan: any;
   activePlan: any;
@@ -295,9 +347,16 @@ const PlanDetailView: React.FC<{
   onUpgradeClick: () => void;
 }> = ({ plan, activePlan, onBack, onMarkDayComplete, isPro, theme, onUpgradeClick }) => {
   const [selectedDay, setSelectedDay] = useState(activePlan?.currentDay || 1);
-  const todayReading = plan.readings.find((r: any) => r.day === selectedDay);
+  const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
+  
+  // Get all chapters for the selected day
+  const dayReadings = plan.readings.filter((r: any) => r.day === selectedDay);
+  const todayReading = dayReadings[selectedChapterIndex] || dayReadings[0];
+  
   const isTodayCompleted = activePlan?.completedDays.includes(selectedDay);
   const isLocked = plan.isPro && !isPro;
+  const hasMoreChapters = selectedChapterIndex < dayReadings.length - 1;
+  const isLastChapter = selectedChapterIndex >= dayReadings.length - 1;
   
   const { verses, isLoading, error, isOffline } = useBibleChapter(
     todayReading?.book || 'John',
@@ -312,65 +371,44 @@ const PlanDetailView: React.FC<{
       <div className="flex flex-col items-center justify-center py-12 text-center">
         <Lock size={48} style={{ color: theme.accent }} />
         <h3 className="text-lg font-bold mt-4 mb-2" style={{ color: theme.text }}>Pro Plan Required</h3>
-        <p className="text-sm mb-6" style={{ color: theme.textMuted }}>
-          This reading plan is only available for Logos Pro subscribers.
-        </p>
-        <button
-          onClick={onUpgradeClick}
-          className="px-6 py-3 rounded-xl font-semibold transition-all hover:opacity-80"
-          style={{ backgroundColor: theme.accent, color: 'white' }}
-        >
+        <p className="text-sm mb-6" style={{ color: theme.textMuted }}>Upgrade to access this plan.</p>
+        <button onClick={onUpgradeClick} className="px-6 py-3 rounded-xl font-semibold" style={{ backgroundColor: theme.accent, color: 'white' }}>
           Upgrade to Pro
         </button>
       </div>
     );
   }
   
-  // Rest of PlanDetailView remains the same...
   return (
     <div className="space-y-4">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-sm mb-4"
-        style={{ color: theme.accent }}
-      >
+      <button onClick={onBack} className="flex items-center gap-2 text-sm mb-4" style={{ color: theme.accent }}>
         <ArrowLeft size={16} /> Back to Plans
       </button>
       
+      {/* Progress */}
       <div className="rounded-2xl p-4 text-center" style={{ backgroundColor: theme.surface }}>
-        <div className="flex items-center justify-center gap-2 mb-2">
-          <Target size={16} style={{ color: theme.accent }} />
-          <span className="text-sm font-medium" style={{ color: theme.textMuted }}>Progress</span>
-        </div>
-        <p className="text-3xl font-bold mb-1" style={{ color: theme.text }}>
-          {activePlan?.completedDays.length || 0}/{plan.duration}
-        </p>
+        <p className="text-3xl font-bold" style={{ color: theme.text }}>{activePlan?.completedDays.length || 0}/{plan.duration}</p>
         <div className="h-2 rounded-full overflow-hidden mt-2" style={{ backgroundColor: theme.border }}>
-          <div className="h-full rounded-full transition-all" style={{ width: `${progress}%`, backgroundColor: theme.accent }} />
+          <div className="h-full rounded-full" style={{ width: `${progress}%`, backgroundColor: theme.accent }} />
         </div>
-        <p className="text-xs mt-2" style={{ color: theme.accent }}>
-          {Math.round(progress)}% complete
-        </p>
+        <p className="text-xs mt-2" style={{ color: theme.accent }}>{Math.round(progress)}% complete</p>
       </div>
       
+      {/* Day Selector */}
       <div className="rounded-2xl p-4" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
         <h3 className="font-bold text-sm mb-3" style={{ color: theme.text }}>Select Day</h3>
         <div className="grid grid-cols-7 gap-1 max-h-48 overflow-y-auto">
-          {Array.from({ length: Math.min(plan.duration, 35) }, (_, i) => i + 1).map(day => {
+          {Array.from({ length: plan.duration }, (_, i) => i + 1).map(day => {
             const isCompleted = activePlan?.completedDays.includes(day);
             const isCurrent = day === selectedDay;
-            
             return (
-              <button
-                key={day}
-                onClick={() => setSelectedDay(day)}
-                className="aspect-square flex items-center justify-center rounded-lg text-xs font-medium transition-all"
+              <button key={day} onClick={() => { setSelectedDay(day); setSelectedChapterIndex(0); }}
+                className="aspect-square flex items-center justify-center rounded-lg text-xs font-medium"
                 style={{
                   backgroundColor: isCompleted ? '#4CAF50' : isCurrent ? theme.accent : theme.surface,
                   color: (isCompleted || isCurrent) ? 'white' : theme.text,
                   border: `1px solid ${isCurrent ? theme.accent : theme.border}`,
-                }}
-              >
+                }}>
                 {day}
               </button>
             );
@@ -378,14 +416,19 @@ const PlanDetailView: React.FC<{
         </div>
       </div>
       
+      {/* Reading Content */}
       <div className="rounded-2xl p-4" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
         <div className="flex items-center justify-between mb-3">
           <div>
             <h3 className="font-bold" style={{ color: theme.text }}>
               Day {selectedDay}: {todayReading?.title || `${todayReading?.book} ${todayReading?.chapter}`}
             </h3>
+            
             <p className="text-xs mt-1" style={{ color: theme.accent }}>
-              {todayReading?.book} {todayReading?.chapter}:{todayReading?.startVerse}-{todayReading?.endVerse || 30}
+              {dayReadings.length > 1 
+                ? `Passage ${selectedChapterIndex + 1} of ${dayReadings.length} for today`
+                : `${todayReading?.book} ${todayReading?.chapter}${todayReading?.startVerse ? `:${todayReading.startVerse}-${todayReading.endVerse}` : ''}`
+              }
             </p>
           </div>
           {isOffline && <WifiOff size={14} style={{ color: '#f59e0b' }} />}
@@ -401,7 +444,7 @@ const PlanDetailView: React.FC<{
           </div>
         ) : verses && (
           <div className="space-y-3 max-h-96 overflow-y-auto">
-            {verses.slice(0, 15).map(verse => (
+            {verses.map(verse => (
               <p key={verse.verse} className="text-sm leading-relaxed" style={{ color: theme.text }}>
                 <sup className="text-xs mr-1.5" style={{ color: theme.accent }}>{verse.verse}</sup>
                 {verse.text}
@@ -410,17 +453,33 @@ const PlanDetailView: React.FC<{
           </div>
         )}
         
-        {!isTodayCompleted && selectedDay === (activePlan?.currentDay || 1) && activePlan && (
-          <button
-            onClick={() => onMarkDayComplete(selectedDay)}
-            className="w-full mt-4 py-3 rounded-xl font-semibold text-sm transition-all hover:opacity-80"
-            style={{ backgroundColor: theme.accent, color: 'white' }}
-          >
+        {/* Chapter Navigation */}
+        {dayReadings.length > 1 && (
+          <div className="flex gap-2 mt-4">
+            {selectedChapterIndex > 0 && (
+              <button onClick={() => setSelectedChapterIndex(prev => prev - 1)}
+                className="flex-1 py-2 rounded-xl text-sm font-medium" style={{ backgroundColor: theme.surface, color: theme.text }}>
+                ← Previous Chapter
+              </button>
+            )}
+            {hasMoreChapters && (
+              <button onClick={() => setSelectedChapterIndex(prev => prev + 1)}
+                className="flex-1 py-2 rounded-xl text-sm font-medium" style={{ backgroundColor: theme.surface, color: theme.text }}>
+                Next Chapter →
+              </button>
+            )}
+          </div>
+        )}
+        
+        {/* Mark Complete - Only on last chapter */}
+        {!isTodayCompleted && isLastChapter && activePlan && selectedDay === activePlan.currentDay && (
+          <button onClick={() => onMarkDayComplete(selectedDay)}
+            className="w-full mt-4 py-3 rounded-xl font-semibold text-sm" style={{ backgroundColor: theme.accent, color: 'white' }}>
             Mark Day {selectedDay} Complete ✓
           </button>
         )}
         
-        {isTodayCompleted && selectedDay === (activePlan?.currentDay || 1) && (
+        {isTodayCompleted && (
           <div className="flex items-center justify-center gap-2 mt-4 py-2 rounded-xl" style={{ backgroundColor: `${theme.accent}20` }}>
             <CheckCircle size={16} style={{ color: theme.accent }} />
             <span className="text-sm font-medium" style={{ color: theme.accent }}>Day Complete!</span>
@@ -431,8 +490,9 @@ const PlanDetailView: React.FC<{
   );
 };
 
-// Main Component
+// Main Component (keep the rest as before)
 const ReadingPlansScreen: React.FC = () => {
+  // ... same as before ...
   const { readerSettings, navigate, isPro, activePlans, markDayComplete, enrollPlan } = useAppStore();
   const theme = getTheme(readerSettings.theme);
   const [selectedPlanId, setSelectedPlanId] = useState<string | null>(null);
@@ -551,7 +611,7 @@ const ReadingPlansScreen: React.FC = () => {
                   <Crown size={24} style={{ color: theme.accent }} />
                   <div className="flex-1">
                     <h3 className="font-bold text-sm" style={{ color: theme.text }}>Unlock All Plans</h3>
-                    <p className="text-xs" style={{ color: theme.textMuted }}>Get access to 50+ reading plans with Logos Pro</p>
+                    <p className="text-xs" style={{ color: theme.textMuted }}>Get access to 50+ reading plans with Synthesis Pro</p>
                   </div>
                   <button
                     onClick={handleUpgradeClick}

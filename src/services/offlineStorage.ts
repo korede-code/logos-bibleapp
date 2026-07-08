@@ -1,5 +1,4 @@
 // src/services/offlineStorage.ts
-
 interface CachedChapter {
   book: string;
   chapter: number;

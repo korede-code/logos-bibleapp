@@ -49,7 +49,6 @@ router.post('/initialize', async (req, res) => {
 });
 
 // Webhook - THIS IS WHERE PRO STATUS IS SET
-// Webhook - THIS MUST WORK
 router.post('/webhook', async (req, res) => {
   const event = req.body;
   console.log('📨 Paystack webhook received:', JSON.stringify(event, null, 2));

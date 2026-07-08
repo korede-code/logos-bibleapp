@@ -1,7 +1,9 @@
 // src/components/SettingsScreen.tsx
 import React, { useState, useEffect } from 'react';
+import { App } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import {
-  ArrowLeft, Shield, Lock, LogOut, Crown, ChevronRight
+  ArrowLeft, Shield, Lock, LogOut, Crown, ChevronRight,
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
@@ -9,27 +11,48 @@ import { logoutUser, auth } from '../config/firebase';
 import AuthModal from './AuthModal';
 import ProUpgradeModal from './ProUpgradeModal';
 import PrivacyPolicyModal from './PrivacyPolicyModal';
+import { ReminderToggle } from './ReminderToggle';
+import { NotificationService } from '../services/NotificationService';
 
-const SettingsScreen: React.FC = () => {
+// ADD THIS - fallback theme
+const defaultTheme = {
+  bg: '#1a1a1a',
+  card: '#2a2a2a',
+  surface: '#333333',
+  text: '#ffffff',
+  textMuted: '#aaaaaa',
+  textFaint: '#777777',
+  accent: '#488AFF',
+  border: '#444444',
+  warning: '#f59e0b'
+};
+
+interface SettingsScreenProps {
+  theme?: any; // Make optional
+  onClose?: (screen: string) => void;
+}
+
+const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme, onClose, navigate: propNavigate }) => {
+  // Use passed theme OR fallback
+  const t = theme || defaultTheme;
+  
   const { 
     readerSettings, 
-    navigate, 
     setCurrentUser,
     isPro: storeIsPro,
     setProStatus: updateStoreProStatus 
   } = useAppStore();
-  
-  const theme = getTheme(readerSettings.theme);
+
+  const navigate = propNavigate || useAppStore.getState().navigate;
   
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
   const [showPrivacyPolicy, setShowPrivacyPolicy] = useState(false);
   const [user, setUser] = useState<any>(null);
   const [isPro, setIsPro] = useState(false);
-  //const [loading, setLoading] = useState(true);
-  const [loading, setLoading] = useState(false); // ✅ Start as false
+  const [loading, setLoading] = useState(false);
 
-
+  // ... rest of your existing code ...
   const updateProStatus = (status: boolean, uid?: string) => {
     updateStoreProStatus(status);
     setIsPro(status);
@@ -117,8 +140,6 @@ const SettingsScreen: React.FC = () => {
     };
   }, []);
 
-  
-
   const handleSignOut = async () => {
     const result = await logoutUser();
     if (result.success) {
@@ -145,51 +166,49 @@ const SettingsScreen: React.FC = () => {
     setTimeout(() => toast.remove(), 3000);
   };
 
-  
-
   return (
-    <div className="flex flex-col h-full" style={{ backgroundColor: theme.bg }}>
-      <div className="px-5 pt-6 pb-4" style={{ borderBottom: `1px solid ${theme.border}` }}>
+    <div className="flex flex-col h-full" style={{ backgroundColor: t.bg }}>
+      <div className="px-5 pt-6 pb-4" style={{ borderBottom: `1px solid ${t.border}` }}>
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate('home')} style={{ color: theme.textMuted }}>
+          <button onClick={() => navigate('home')} style={{ color: t.textMuted }}>
             <ArrowLeft size={20} />
           </button>
-          <h1 className="text-xl font-bold" style={{ color: theme.text }}>Settings</h1>
+          <h1 className="text-xl font-bold" style={{ color: t.text }}>Settings</h1>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 py-4">
-        <div className="rounded-2xl overflow-hidden mb-6" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-          <div className="p-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
-            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}99)` }}>
+        <div className="rounded-2xl overflow-hidden mb-6" style={{ backgroundColor: t.card, border: `1px solid ${t.border}` }}>
+          <div className="p-4 flex items-center gap-3" style={{ borderBottom: `1px solid ${t.border}` }}>
+            <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: `linear-gradient(135deg, ${t.accent}, ${t.accent}99)` }}>
               <span className="text-2xl text-white">
                 {user?.displayName?.[0] || user?.email?.[0] || 'G'}
               </span>
             </div>
             <div>
-              <p className="font-bold" style={{ color: theme.text }}>
+              <p className="font-bold" style={{ color: t.text }}>
                 {user?.displayName || user?.email || 'Guest User'}
               </p>
               {isPro && (
                 <div className="flex items-center gap-1 mt-1">
-                  <Crown size={12} style={{ color: theme.accent }} />
-                  <span className="text-xs font-semibold" style={{ color: theme.accent }}>⭐ Pro Member</span>
+                  <Crown size={12} style={{ color: t.accent }} />
+                  <span className="text-xs font-semibold" style={{ color: t.accent }}>⭐ Pro Member</span>
                 </div>
               )}
               {!isPro && user && (
-                <p className="text-xs mt-1" style={{ color: theme.textMuted }}>Free Account</p>
+                <p className="text-xs mt-1" style={{ color: t.textMuted }}>Free Account</p>
               )}
             </div>
           </div>
 
           {!user ? (
-            <button onClick={() => setShowAuthModal(true)} className="w-full py-3 text-center font-semibold text-sm" style={{ backgroundColor: theme.accent, color: 'white' }}>
+            <button onClick={() => setShowAuthModal(true)} className="w-full py-3 text-center font-semibold text-sm" style={{ backgroundColor: t.accent, color: 'white' }}>
               Sign In / Create Account
             </button>
           ) : (
             <>
               {!isPro && (
-                <button onClick={() => setShowProModal(true)} className="w-full py-3 text-center font-semibold text-sm" style={{ backgroundColor: `${theme.accent}20`, color: theme.accent }}>
+                <button onClick={() => setShowProModal(true)} className="w-full py-3 text-center font-semibold text-sm" style={{ backgroundColor: `${t.accent}20`, color: t.accent }}>
                   Upgrade to Pro →
                 </button>
               )}
@@ -200,31 +219,34 @@ const SettingsScreen: React.FC = () => {
           )}
         </div>
 
-        <div className="rounded-2xl overflow-hidden" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-          <p className="text-xs font-bold uppercase tracking-widest px-4 pt-5 pb-2" style={{ color: theme.textMuted }}>✦ Privacy & Security</p>
-          <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${theme.border}` }}>
-            <Lock size={16} style={{ color: theme.accent }} />
+        <div className="rounded-2xl overflow-hidden mb-6" style={{ backgroundColor: t.card, border: `1px solid ${t.border}` }}>
+          <p className="text-xs font-bold uppercase tracking-widest px-4 pt-5 pb-2" style={{ color: t.textMuted }}>✦ Privacy & Security</p>
+          <div className="flex items-center gap-3 px-4 py-3.5" style={{ borderBottom: `1px solid ${t.border}` }}>
+            <Lock size={16} style={{ color: t.accent }} />
             <div className="flex-1">
-              <p className="font-medium text-sm" style={{ color: theme.text }}>End-to-End Encryption</p>
-              <p className="text-xs" style={{ color: theme.textFaint }}>Notes, highlights, and prayers are encrypted</p>
+              <p className="font-medium text-sm" style={{ color: t.text }}>End-to-End Encryption</p>
+              <p className="text-xs" style={{ color: t.textFaint }}>Notes, highlights, and prayers are encrypted</p>
             </div>
-            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${theme.accent}20`, color: theme.accent }}>Active</span>
+            <span className="text-xs font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: `${t.accent}20`, color: t.accent }}>Active</span>
           </div>
           <button onClick={() => setShowPrivacyPolicy(true)} className="w-full flex items-center gap-3 px-4 py-3.5 text-left">
-            <Shield size={16} style={{ color: theme.accent }} />
+            <Shield size={16} style={{ color: t.accent }} />
             <div className="flex-1">
-              <p className="font-medium text-sm" style={{ color: theme.text }}>Privacy Policy</p>
-              <p className="text-xs" style={{ color: theme.textFaint }}>No tracking, no ads, no data selling</p>
+              <p className="font-medium text-sm" style={{ color: t.text }}>Privacy Policy</p>
+              <p className="text-xs" style={{ color: t.textFaint }}>No tracking, no ads, no data selling</p>
             </div>
-            <ChevronRight size={14} style={{ color: theme.textFaint }} />
+            <ChevronRight size={14} style={{ color: t.textFaint }} />
           </button>
         </div>
 
-        <div className="mt-8 p-4 rounded-2xl text-center" style={{ backgroundColor: theme.surface }}>
+        {/* Add the reminder toggle */}
+        <ReminderToggle theme={t} />
+        
+        <div className="mt-8 p-4 rounded-2xl text-center" style={{ backgroundColor: t.surface }}>
           <span className="text-2xl block mb-2">✝</span>
-          <p className="text-xs font-bold" style={{ color: theme.text }}>Logos Daily</p>
-          <p className="text-xs" style={{ color: theme.textMuted }}>Psalm 119:105</p>
-          <p className="text-xs mt-2" style={{ color: theme.textFaint }}>v1.0.0</p>
+          <p className="text-xs font-bold" style={{ color: t.text }}>Synthesis Bible</p>
+          <p className="text-xs" style={{ color: t.textMuted }}>Psalm 119:105</p>
+          <p className="text-xs mt-2" style={{ color: t.textFaint }}>v1.0.0</p>
         </div>
       </div>
 
@@ -247,7 +269,7 @@ const SettingsScreen: React.FC = () => {
           setIsPro(true);
           updateStoreProStatus(true);
           if (user?.uid) localStorage.setItem(`isPro_${user.uid}`, 'true');
-          showToast('🎉 Welcome to Logos Pro!', theme.accent);
+          showToast('🎉 Welcome to Synthesis Pro!', t.accent);
         }}
         themeMode={readerSettings.theme}
       />

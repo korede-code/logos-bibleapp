@@ -38,7 +38,7 @@ const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onClose
     {
       title: 'Your Rights',
       icon: <CheckCircle size={18} />,
-      content: 'You can access, export, or delete your data anytime in Settings. Contact privacy@logosdaily.com for requests.'
+      content: 'You can access, export, or delete your data anytime in Settings. Contact emmakorede21@gmail.com for requests.'
     }
   ];
 
