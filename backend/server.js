@@ -57,21 +57,21 @@ app.post('/api/payments/initialize', async (req, res) => {
     const { email, amount, planId, userId, isMobile } = req.body;
     const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
-    console.log('💰 Payment init:', { email, amount, planId, userId, reference });
-
+    // 🔥 FIXED: Use the correct success page URL
     const callbackUrl = isMobile 
-      ? 'com.logosdaily.app://payment-success'
+      ? 'https://logos-daily.web.app/payment-success'  // Use web URL, the page will redirect to app
       : 'https://logos-daily.web.app/payment-success';
 
-    // Use the imported 'axios' here
+    console.log('💰 Payment init:', { email, amount, planId, userId, reference, callbackUrl });
+
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
       {
-        email: email, // FIXED: Use 'email' instead of 'userEmail'
+        email: email,
         amount: Math.round(amount * 100),
         currency: 'NGN',
         reference: reference,
-        callback_url: callbackUrl,
+        callback_url: callbackUrl,  // Always use the web URL
         metadata: { userId, plan: planId }
       },
       {
