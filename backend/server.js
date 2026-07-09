@@ -58,9 +58,7 @@ app.post('/api/payments/initialize', async (req, res) => {
     const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
     // 🔥 FIXED: Use the correct success page URL
-    const callbackUrl = isMobile 
-      ? 'https://logos-daily.web.app/payment-success'  // Use web URL, the page will redirect to app
-      : 'https://logos-daily.web.app/payment-success';
+    const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
 
     console.log('💰 Payment init:', { email, amount, planId, userId, reference, callbackUrl });
 
