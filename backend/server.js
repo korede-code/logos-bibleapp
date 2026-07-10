@@ -57,21 +57,20 @@ app.post('/api/payments/initialize', async (req, res) => {
     const { email, amount, planId, userId, isMobile } = req.body;
     const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
-    console.log('💰 Payment init:', { email, amount, planId, userId, reference });
+    // 🔥 FIXED: Use the correct success page URL
+    // use a universal link that works for both
+    const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
 
-    const callbackUrl = isMobile 
-      ? 'com.logosdaily.app://payment-success'
-      : 'https://logos-daily.web.app/payment-success';
+    console.log('💰 Payment init:', { email, amount, planId, userId, reference, callbackUrl });
 
-    // Use the imported 'axios' here
     const response = await axios.post(
       'https://api.paystack.co/transaction/initialize',
       {
-        email: email, // FIXED: Use 'email' instead of 'userEmail'
+        email: email,
         amount: Math.round(amount * 100),
         currency: 'NGN',
         reference: reference,
-        callback_url: callbackUrl,
+        callback_url: callbackUrl,  // Always use the web URL
         metadata: { userId, plan: planId }
       },
       {
@@ -113,43 +112,101 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
       { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
     );
 
+    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
+
     if (response.data.status && response.data.data.status === 'success') {
       const userId = response.data.data.metadata?.userId;
+      console.log('✅ Payment verified! userId:', userId);
+
       if (userId) {
+        // Read existing users
         const users = readUsers();
+        console.log('📝 Current users:', users);
+
+        // Update user's Pro status
         users.users[userId] = { 
           isPro: true, 
           proSince: new Date().toISOString(),
-          lastPaymentRef: reference
+          lastPaymentRef: reference,
+          email: response.data.data.customer?.email,
+          amount: response.data.data.amount,
+          plan: response.data.data.metadata?.plan
         };
+
+        // Write back to file
         writeUsers(users);
+        console.log('✅ Pro status updated for user:', userId);
+        console.log('📝 Updated users:', users);
       }
-      res.json({ success: true, verified: true, userId });
+      res.json({ 
+        success: true, 
+        verified: true, 
+        userId: userId,
+        data: response.data.data
+      });
     } else {
-      res.json({ success: false, verified: false });
-    }
+      console.warn('⚠️ No userId in metadata');
+      res.json({ success: true, verified: true, userId: null });
+    } else {
+       console.warn('⚠️ Payment not successful:', response.data);
+       res.json({ success: false, verified: false });
+      }
+
   } catch (error) {
-    console.error('Verification error:', error);
+    console.error('❌ Verification error:', error.response?.data || error.message);
     res.status(500).json({ success: false, error: 'Verification failed' });
   }
+
 });
 
 // Check Pro status
 app.get('/api/payments/pro-status/:userId', (req, res) => {
   const { userId } = req.params;
-  const data = readUsers();
-  const isPro = data.users[userId]?.isPro === true;
-  res.json({ success: true, isPro });
+  console.log('🔍 Checking Pro status for:', userId);
+
+  try {
+    const data = readUsers();
+    const userData = data.users[userId];
+    const isPro = userData?.isPro === true;
+    console.log('📝 User data:', userData);
+    console.log('✅ Is Pro:', isPro);
+
+    res.json({ 
+     success: true, 
+     isPro: isPro,
+     data: userData 
+    });
+  } catch (error) {
+    onsole.error('❌ Error checking Pro status:', error);
+    res.status(500).json({ success: false, error: 'Failed to check Pro status' });
+  } 
 });
 
 // Set Pro status (test endpoint)
-app.post('/api/payments/test-set-pro', (req, res) => {
-  const { userId } = req.body;
-  const data = readUsers();
-  data.users[userId] = { isPro: true, proSince: new Date().toISOString() };
-  writeUsers(data);
-  console.log('✅ Pro set for:', userId);
-  res.json({ success: true, isPro: true });
+// TEST ENDPOINT - Manually set Pro status for testing
+app.post('/api/payments/test-set-pro', async (req, res) => {
+  try {
+    const { userId } = req.body;
+    console.log('🔧 Manually setting Pro for userId:', userId);
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId required' });
+    }
+    
+    const users = readUsers();
+    users.users[userId] = { 
+      isPro: true, 
+      proSince: new Date().toISOString(),
+      test: true 
+    };
+    writeUsers(users);
+    
+    console.log('✅ Pro status manually set for:', userId);
+    res.json({ success: true, isPro: true, userId });
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 // Webhook - IMPORTANT: Parse raw body for Paystack

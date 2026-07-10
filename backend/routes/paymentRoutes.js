@@ -49,6 +49,7 @@ router.post('/initialize', async (req, res) => {
 });
 
 // Webhook - THIS IS WHERE PRO STATUS IS SET
+// Also fix the webhook
 router.post('/webhook', async (req, res) => {
   const event = req.body;
   console.log('📨 Paystack webhook received:', JSON.stringify(event, null, 2));
@@ -56,11 +57,6 @@ router.post('/webhook', async (req, res) => {
   if (event.event === 'charge.success') {
     const { reference, metadata, customer } = event.data;
     const userId = metadata?.userId;
-
-    console.log('✅ Payment successful!');
-    console.log('   Reference:', reference);
-    console.log('   User ID:', userId);
-    console.log('   Email:', customer?.email);
 
     if (userId) {
       try {
@@ -73,7 +69,7 @@ router.post('/webhook', async (req, res) => {
           paidAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-        // SET USER AS PRO - This is the critical line!
+        // SET USER AS PRO
         await db.collection('users').doc(userId).set({
           isPro: true,
           proSince: admin.firestore.FieldValue.serverTimestamp(),
@@ -82,21 +78,13 @@ router.post('/webhook', async (req, res) => {
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
         }, { merge: true });
 
-        console.log('✅ Firestore updated! User', userId, 'is now PRO');
-
-        // Verify it was saved
-        const userDoc = await db.collection('users').doc(userId).get();
-        console.log('   Verified Firestore data:', userDoc.data());
-
+        console.log('✅ User', userId, 'is now PRO');
       } catch (err) {
         console.error('❌ Firestore update failed:', err);
       }
-    } else {
-      console.error('❌ No userId in metadata. Cannot update Firestore.');
     }
   }
 
-  // Always return 200 to Paystack
   res.sendStatus(200);
 });
 
@@ -113,39 +101,6 @@ router.get('/pro-status/:userId', async (req, res) => {
     }
   } catch (error) {
     res.status(500).json({ success: false, isPro: false, error: error.message });
-  }
-});
-
-// TEST ENDPOINT - Manually set Pro status for a user
-router.post('/test-set-pro', async (req, res) => {
-  try {
-    const { userId } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId required' });
-    }
-
-    // Update Firestore
-    await db.collection('users').doc(userId).set({
-      isPro: true,
-      proSince: admin.firestore.FieldValue.serverTimestamp(),
-      updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    }, { merge: true });
-
-    console.log('✅ Pro status set for user:', userId);
-
-    // Verify it was saved
-    const doc = await db.collection('users').doc(userId).get();
-    const data = doc.data();
-
-    res.json({ 
-      success: true, 
-      message: `Pro status updated for ${userId}`,
-      verified: data 
-    });
-  } catch (error) {
-    console.error('Set Pro error:', error);
-    res.status(500).json({ success: false, error: error.message });
   }
 });
 

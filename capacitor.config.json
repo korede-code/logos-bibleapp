@@ -30,5 +30,8 @@
     "CapacitorCookies": {
       "enabled": true
     }
+  },
+  "android": {
+    "allowMixedContent": true
   }
 }
