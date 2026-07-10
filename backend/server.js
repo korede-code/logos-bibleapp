@@ -117,46 +117,40 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 
     console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
 
-    if (response.data.status && response.data.data.status === 'success') {
-      const userId = response.data.data.metadata?.userId;
-      console.log('✅ Payment verified! userId:', userId);
-
-      if (userId) {
-        // Read existing users
-        const users = readUsers();
-        console.log('📝 Current users:', users);
-
-        // Update user's Pro status
-        users.users[userId] = { 
-          isPro: true, 
-          proSince: new Date().toISOString(),
-          lastPaymentRef: reference,
-          email: response.data.data.customer?.email,
-          amount: response.data.data.amount,
-          plan: response.data.data.metadata?.plan
-        };
-
-        // Write back to file
-        writeUsers(users);
-        console.log('✅ Pro status updated for user:', userId);
-        console.log('📝 Updated users:', users);
-      } else {
-        console.warn('⚠️ No userId in metadata');
-        // Still return success for the payment itself, just without userId
-      }
-      
-      // Send success response
-      res.json({ 
-        success: true, 
-        verified: true, 
-        userId: userId,
-        data: response.data.data
-      });
-    } else {
-      // Payment was not successful
-      console.warn('⚠️ Payment not successful:', response.data);
-      res.json({ success: false, verified: false });
+    // Check if payment was successful
+    const isSuccessful = response.data.status && response.data.data.status === 'success';
+    
+    if (!isSuccessful) {
+      console.warn('⚠️ Payment not successful');
+      return res.json({ success: false, verified: false });
     }
+
+    // Payment is successful - update user's Pro status
+    const userId = response.data.data.metadata?.userId;
+    console.log('✅ Payment verified! userId:', userId);
+
+    if (userId) {
+      const users = readUsers();
+      users.users[userId] = { 
+        isPro: true, 
+        proSince: new Date().toISOString(),
+        lastPaymentRef: reference,
+        email: response.data.data.customer?.email,
+        amount: response.data.data.amount,
+        plan: response.data.data.metadata?.plan
+      };
+      writeUsers(users);
+      console.log('✅ Pro status updated for user:', userId);
+    } else {
+      console.warn('⚠️ No userId in metadata - cannot update Pro status');
+    }
+
+    res.json({ 
+      success: true, 
+      verified: true, 
+      userId: userId,
+      data: response.data.data
+    });
 
   } catch (error) {
     console.error('❌ Verification error:', error.response?.data || error.message);
