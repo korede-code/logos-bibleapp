@@ -58,7 +58,10 @@ app.post('/api/payments/initialize', async (req, res) => {
     const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
 
     // 🔥 FIXED: Use the correct success page URL
+<<<<<<< HEAD
     // use a universal link that works for both
+=======
+>>>>>>> 9f1b765d295f4f4a4b17fb15326fffdaf2e1b525
     const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
 
     console.log('💰 Payment init:', { email, amount, planId, userId, reference, callbackUrl });
@@ -137,7 +140,12 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
         writeUsers(users);
         console.log('✅ Pro status updated for user:', userId);
         console.log('📝 Updated users:', users);
+      } else {
+        console.warn('⚠️ No userId in metadata');
+        // Still return success for the payment itself, just without userId
       }
+      
+      // Send success response
       res.json({ 
         success: true, 
         verified: true, 
@@ -145,18 +153,15 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
         data: response.data.data
       });
     } else {
-      console.warn('⚠️ No userId in metadata');
-      res.json({ success: true, verified: true, userId: null });
-    } else {
-       console.warn('⚠️ Payment not successful:', response.data);
-       res.json({ success: false, verified: false });
-      }
+      // Payment was not successful
+      console.warn('⚠️ Payment not successful:', response.data);
+      res.json({ success: false, verified: false });
+    }
 
   } catch (error) {
     console.error('❌ Verification error:', error.response?.data || error.message);
     res.status(500).json({ success: false, error: 'Verification failed' });
   }
-
 });
 
 // Check Pro status
