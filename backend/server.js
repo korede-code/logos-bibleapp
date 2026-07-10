@@ -52,50 +52,60 @@ app.get('/api/health', (req, res) => {
 // Initialize payment
 // Initialize payment
 // Initialize payment - FIXED
-app.post('/api/payments/initialize', async (req, res) => {
+app.get('/api/payments/verify/:reference', async (req, res) => {
+  const { reference } = req.params;
+  console.log('🔍 Verifying payment:', reference);
+
+  if (!process.env.PAYSTACK_SECRET) {
+    return res.json({ success: false, verified: false, message: 'Payment service not configured' });
+  }
+
   try {
-    const { email, amount, planId, userId, isMobile } = req.body;
-    const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-
-    // 🔥 FIXED: Use the correct success page URL
-<<<<<<< HEAD
-    // use a universal link that works for both
-=======
->>>>>>> 9f1b765d295f4f4a4b17fb15326fffdaf2e1b525
-    const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
-
-    console.log('💰 Payment init:', { email, amount, planId, userId, reference, callbackUrl });
-
-    const response = await axios.post(
-      'https://api.paystack.co/transaction/initialize',
-      {
-        email: email,
-        amount: Math.round(amount * 100),
-        currency: 'NGN',
-        reference: reference,
-        callback_url: callbackUrl,  // Always use the web URL
-        metadata: { userId, plan: planId }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
-          'Content-Type': 'application/json'
-        }
-      }
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
     );
 
-    if (response.data.status) {
-      res.json({
-        success: true,
-        paymentUrl: response.data.data.authorization_url,
-        reference: reference
-      });
-    } else {
-      res.status(400).json({ success: false, error: response.data.message });
+    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
+
+    // Check if payment was successful
+    const isSuccessful = response.data.status && response.data.data.status === 'success';
+    
+    if (!isSuccessful) {
+      console.warn('⚠️ Payment not successful');
+      return res.json({ success: false, verified: false });
     }
+
+    // Payment is successful - update user's Pro status
+    const userId = response.data.data.metadata?.userId;
+    console.log('✅ Payment verified! userId:', userId);
+
+    if (userId) {
+      const users = readUsers();
+      users.users[userId] = { 
+        isPro: true, 
+        proSince: new Date().toISOString(),
+        lastPaymentRef: reference,
+        email: response.data.data.customer?.email,
+        amount: response.data.data.amount,
+        plan: response.data.data.metadata?.plan
+      };
+      writeUsers(users);
+      console.log('✅ Pro status updated for user:', userId);
+    } else {
+      console.warn('⚠️ No userId in metadata - cannot update Pro status');
+    }
+
+    res.json({ 
+      success: true, 
+      verified: true, 
+      userId: userId,
+      data: response.data.data
+    });
+
   } catch (error) {
-    console.error('Payment init error:', error);
-    res.status(500).json({ success: false, error: error.message });
+    console.error('❌ Verification error:', error.response?.data || error.message);
+    res.status(500).json({ success: false, error: 'Verification failed' });
   }
 });
 
