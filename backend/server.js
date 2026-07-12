@@ -49,63 +49,61 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Initialize payment
-// Initialize payment
+
 // Initialize payment - FIXED
-app.get('/api/payments/verify/:reference', async (req, res) => {
-  const { reference } = req.params;
-  console.log('🔍 Verifying payment:', reference);
-
-  if (!process.env.PAYSTACK_SECRET) {
-    return res.json({ success: false, verified: false, message: 'Payment service not configured' });
-  }
-
+app.post('/api/payments/initialize', async (req, res) => {
   try {
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
+    const { email, amount, planId, userId, isMobile } = req.body;
+    const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
+
+    const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
+
+    console.log('💰 Payment init:', { email, amount, planId, userId, reference });
+
+    if (!process.env.PAYSTACK_SECRET) {
+      console.error('❌ PAYSTACK_SECRET is not set');
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Payment service not configured' 
+      });
+    }
+
+    const response = await axios.post(
+      'https://api.paystack.co/transaction/initialize',
+      {
+        email: email,
+        amount: Math.round(amount * 100),
+        currency: 'NGN',
+        reference: reference,
+        callback_url: callbackUrl,
+        metadata: { userId, plan: planId }
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
-    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
-
-    // Check if payment was successful
-    const isSuccessful = response.data.status && response.data.data.status === 'success';
-    
-    if (!isSuccessful) {
-      console.warn('⚠️ Payment not successful');
-      return res.json({ success: false, verified: false });
-    }
-
-    // Payment is successful - update user's Pro status
-    const userId = response.data.data.metadata?.userId;
-    console.log('✅ Payment verified! userId:', userId);
-
-    if (userId) {
-      const users = readUsers();
-      users.users[userId] = { 
-        isPro: true, 
-        proSince: new Date().toISOString(),
-        lastPaymentRef: reference,
-        email: response.data.data.customer?.email,
-        amount: response.data.data.amount,
-        plan: response.data.data.metadata?.plan
-      };
-      writeUsers(users);
-      console.log('✅ Pro status updated for user:', userId);
+    if (response.data.status) {
+      res.json({
+        success: true,
+        paymentUrl: response.data.data.authorization_url,
+        reference: reference
+      });
     } else {
-      console.warn('⚠️ No userId in metadata - cannot update Pro status');
+      res.status(400).json({ 
+        success: false, 
+        error: response.data.message || 'Payment initialization failed' 
+      });
     }
-
-    res.json({ 
-      success: true, 
-      verified: true, 
-      userId: userId,
-      data: response.data.data
-    });
-
   } catch (error) {
-    console.error('❌ Verification error:', error.response?.data || error.message);
-    res.status(500).json({ success: false, error: 'Verification failed' });
+    console.error('❌ Payment init error:', error.response?.data || error.message);
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data?.message || error.message || 'Payment initialization failed' 
+    });
   }
 });
 
@@ -125,7 +123,7 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
       { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
     );
 
-    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
+    console.log('📦 Paystack response received');
 
     // Check if payment was successful
     const isSuccessful = response.data.status && response.data.data.status === 'success';
@@ -164,7 +162,11 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 
   } catch (error) {
     console.error('❌ Verification error:', error.response?.data || error.message);
-    res.status(500).json({ success: false, error: 'Verification failed' });
+    res.status(500).json({ 
+      success: false, 
+      verified: false,
+      error: error.response?.data?.message || error.message || 'Verification failed' 
+    });
   }
 });
 
@@ -172,31 +174,25 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 app.get('/api/payments/pro-status/:userId', (req, res) => {
   const { userId } = req.params;
   console.log('🔍 Checking Pro status for:', userId);
-
+  
   try {
     const data = readUsers();
     const userData = data.users[userId];
     const isPro = userData?.isPro === true;
-    console.log('📝 User data:', userData);
-    console.log('✅ Is Pro:', isPro);
-
-    res.json({ 
-     success: true, 
-     isPro: isPro,
-     data: userData 
-    });
+    
+    res.json({ success: true, isPro: isPro, data: userData });
   } catch (error) {
-    onsole.error('❌ Error checking Pro status:', error);
+    console.error('❌ Error checking Pro status:', error);
     res.status(500).json({ success: false, error: 'Failed to check Pro status' });
-  } 
+  }
 });
+
 
 // Set Pro status (test endpoint)
 // TEST ENDPOINT - Manually set Pro status for testing
-app.post('/api/payments/test-set-pro', async (req, res) => {
+app.post('/api/payments/test-set-pro', (req, res) => {
   try {
     const { userId } = req.body;
-    console.log('🔧 Manually setting Pro for userId:', userId);
     
     if (!userId) {
       return res.status(400).json({ success: false, error: 'userId required' });
@@ -210,7 +206,6 @@ app.post('/api/payments/test-set-pro', async (req, res) => {
     };
     writeUsers(users);
     
-    console.log('✅ Pro status manually set for:', userId);
     res.json({ success: true, isPro: true, userId });
   } catch (error) {
     console.error('❌ Error:', error);
