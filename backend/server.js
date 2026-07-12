@@ -109,21 +109,26 @@ app.post('/api/payments/initialize', async (req, res) => {
 
 // Verify payment
 // Verify payment - FIXED
+// In server.js - Verification endpoint
 app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
 
   if (!process.env.PAYSTACK_SECRET) {
+    console.error('❌ PAYSTACK_SECRET is not set');
     return res.json({ success: false, verified: false, message: 'Payment service not configured' });
   }
 
   try {
+    console.log('📡 Calling Paystack API to verify:', reference);
+    
     const response = await axios.get(
       `https://api.paystack.co/transaction/verify/${reference}`,
       { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
     );
 
-    console.log('📦 Paystack response received');
+    console.log('📦 Paystack response status:', response.data.status);
+    console.log('📦 Paystack data status:', response.data.data?.status);
 
     // Check if payment was successful
     const isSuccessful = response.data.status && response.data.data.status === 'success';
@@ -139,6 +144,9 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 
     if (userId) {
       const users = readUsers();
+      console.log('📝 Current users:', Object.keys(users.users));
+      
+      // Update user's Pro status
       users.users[userId] = { 
         isPro: true, 
         proSince: new Date().toISOString(),
@@ -147,18 +155,30 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
         amount: response.data.data.amount,
         plan: response.data.data.metadata?.plan
       };
+      
       writeUsers(users);
       console.log('✅ Pro status updated for user:', userId);
+      console.log('📝 Updated users:', Object.keys(users.users));
+      
+      // Verify it was saved
+      const savedUser = readUsers();
+      console.log('📝 Verified saved user:', savedUser.users[userId]);
+      
+      res.json({ 
+        success: true, 
+        verified: true, 
+        userId: userId,
+        data: response.data.data
+      });
     } else {
       console.warn('⚠️ No userId in metadata - cannot update Pro status');
+      res.json({ 
+        success: true, 
+        verified: true, 
+        userId: null,
+        warning: 'No userId in metadata'
+      });
     }
-
-    res.json({ 
-      success: true, 
-      verified: true, 
-      userId: userId,
-      data: response.data.data
-    });
 
   } catch (error) {
     console.error('❌ Verification error:', error.response?.data || error.message);
@@ -171,19 +191,33 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
 });
 
 // Check Pro status
+// In server.js - Pro status endpoint
 app.get('/api/payments/pro-status/:userId', (req, res) => {
   const { userId } = req.params;
-  console.log('🔍 Checking Pro status for:', userId);
+  console.log('🔍 Checking Pro status for userId:', userId);
   
   try {
     const data = readUsers();
-    const userData = data.users[userId];
-    const isPro = userData?.isPro === true;
+    console.log('📝 All user IDs:', Object.keys(data.users));
     
-    res.json({ success: true, isPro: isPro, data: userData });
+    const userData = data.users[userId];
+    console.log('📝 User data for', userId, ':', userData);
+    
+    const isPro = userData?.isPro === true;
+    console.log('✅ Is Pro:', isPro);
+    
+    res.json({ 
+      success: true, 
+      isPro: isPro,
+      data: userData || null
+    });
   } catch (error) {
     console.error('❌ Error checking Pro status:', error);
-    res.status(500).json({ success: false, error: 'Failed to check Pro status' });
+    res.status(500).json({ 
+      success: false, 
+      isPro: false, 
+      error: error.message 
+    });
   }
 });
 
@@ -209,6 +243,32 @@ app.post('/api/payments/test-set-pro', (req, res) => {
     res.json({ success: true, isPro: true, userId });
   } catch (error) {
     console.error('❌ Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+// Add this to server.js
+app.post('/api/payments/manual-activate', async (req, res) => {
+  try {
+    const { userId, reference } = req.body;
+    console.log('🔧 Manual activation for userId:', userId, 'reference:', reference);
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId required' });
+    }
+    
+    const users = readUsers();
+    users.users[userId] = { 
+      isPro: true, 
+      proSince: new Date().toISOString(),
+      lastPaymentRef: reference || 'manual',
+      manualActivation: true
+    };
+    writeUsers(users);
+    
+    console.log('✅ Pro status manually activated for:', userId);
+    res.json({ success: true, isPro: true, userId });
+  } catch (error) {
+    console.error('❌ Manual activation error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
