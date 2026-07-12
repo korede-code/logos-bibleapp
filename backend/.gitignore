@@ -11,7 +11,9 @@ dist/
 build/
 
 # Firebase Service Account (CRITICAL - keep secret!)
-serviceAccountKey.json
+# backend/.gitignore
+service-account.json
+
 *.key
 *.pem
 *.cert

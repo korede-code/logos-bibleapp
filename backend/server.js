@@ -3,11 +3,32 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const app = express();
-const { db } = require('./config/firebase-admin');
+//const { db } = require('./config/firebase-admin');
 const axios = require('axios');
 
 
-// CORS - Allow everything
+// Try to load Firebase, but continue if it fails
+let db = null;
+let admin = null;
+let isFirebaseAvailable = false;
+
+try {
+  const firebaseConfig = require('./config/firebase-admin');
+  db = firebaseConfig.db;
+  admin = firebaseConfig.admin;
+  isFirebaseAvailable = firebaseConfig.isFirebaseAvailable || false;
+  
+  if (isFirebaseAvailable) {
+    console.log('✅ Firebase loaded successfully');
+  } else {
+    console.log('⚠️ Firebase not available - will use JSON file');
+  }
+} catch (error) {
+  console.error('⚠️ Firebase failed to load:', error.message);
+  console.log('⚠️ Continuing without Firebase (will use JSON file)');
+}
+
+// ============ CORS ============
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -22,7 +43,74 @@ app.use(express.json());
 
 console.log('🚀 Starting Synthesis Bible API Server...');
 
-// Health check
+// ============ DATA HELPERS ============
+const DATA_FILE = path.join(__dirname, 'data', 'users.json');
+
+// Ensure data directory exists
+const dataDir = path.join(__dirname, 'data');
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+}
+
+// Read users helper
+function readUsers() {
+  if (fs.existsSync(DATA_FILE)) {
+    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
+  }
+  return { users: {} };
+}
+
+// Write users helper
+function writeUsers(data) {
+  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+}
+
+// Helper function to save user data (works with both Firebase and JSON)
+async function saveUserData(userId, userData) {
+  if (isFirebaseAvailable && db) {
+    try {
+      await db.collection('users').doc(userId).set(userData, { merge: true });
+      console.log('✅ Pro status saved to Firestore for user:', userId);
+      return true;
+    } catch (error) {
+      console.error('❌ Firebase save error:', error);
+      // Fallback to JSON
+    }
+  }
+  
+  // Fallback to JSON
+  try {
+    const users = readUsers();
+    users.users[userId] = userData;
+    writeUsers(users);
+    console.log('✅ Pro status saved to JSON for user:', userId);
+    return true;
+  } catch (error) {
+    console.error('❌ JSON save error:', error);
+    return false;
+  }
+}
+
+// Helper function to get user data
+async function getUserData(userId) {
+  if (isFirebaseAvailable && db) {
+    try {
+      const doc = await db.collection('users').doc(userId).get();
+      if (doc.exists) {
+        return doc.data();
+      }
+    } catch (error) {
+      console.error('❌ Firebase read error:', error);
+      // Fallback to JSON
+    }
+  }
+  
+  // Fallback to JSON
+  const users = readUsers();
+  return users.users[userId] || null;
+}
+
+// ============ HEALTH CHECK ============
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
@@ -77,7 +165,7 @@ app.post('/api/payments/initialize', async (req, res) => {
   }
 });
 
-// Verify payment - SAVES TO FIRESTORE
+// Verify payment
 app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
@@ -103,10 +191,7 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
     console.log('✅ Payment verified! userId:', userId);
 
     if (userId) {
-      // 🔥 SAVE TO FIRESTORE
-      const userRef = db.collection('users').doc(userId);
-      await userRef.set({
-        userId: userId,
+      const userData = {
         isPro: true,
         proSince: new Date().toISOString(),
         lastPaymentRef: reference,
@@ -115,15 +200,12 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
         plan: response.data.data.metadata?.plan,
         verifiedAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
-      }, { merge: true }); // merge: true prevents overwriting other user data
+      };
       
-      console.log('✅ Pro status saved to Firestore for user:', userId);
-      
-      // Verify it was saved
-      const savedDoc = await userRef.get();
-      console.log('📝 Verified Firestore data:', savedDoc.data());
+      await saveUserData(userId, userData);
+      console.log('✅ Pro status updated for user:', userId);
     } else {
-      console.warn('⚠️ No userId in metadata');
+      console.warn('⚠️ No userId in metadata - cannot update Pro status');
     }
 
     res.json({ 
@@ -141,19 +223,15 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
       error: error.response?.data?.message || error.message || 'Verification failed' 
     });
   }
-})
+});
 
-// Check Pro status - READS FROM FIRESTORE
+// Check Pro status
 app.get('/api/payments/pro-status/:userId', async (req, res) => {
   const { userId } = req.params;
   console.log('🔍 Checking Pro status for userId:', userId);
   
   try {
-    // 🔥 READ FROM FIRESTORE
-    const userDoc = await db.collection('users').doc(userId).get();
-    const userData = userDoc.data();
-    console.log('📝 Firestore result:', userData);
-    
+    const userData = await getUserData(userId);
     const isPro = userData?.isPro === true;
     console.log('✅ Is Pro:', isPro);
     
@@ -181,16 +259,16 @@ app.post('/api/payments/test-set-pro', async (req, res) => {
       return res.status(400).json({ success: false, error: 'userId required' });
     }
     
-    // 🔥 SAVE TO FIRESTORE
-    await db.collection('users').doc(userId).set({
-      userId: userId,
+    const userData = {
       isPro: true,
       proSince: new Date().toISOString(),
       test: true,
       updatedAt: new Date().toISOString()
-    }, { merge: true });
+    };
     
+    await saveUserData(userId, userData);
     console.log('✅ Pro status manually set for:', userId);
+    
     res.json({ success: true, isPro: true, userId });
   } catch (error) {
     console.error('❌ Error:', error);
@@ -198,25 +276,7 @@ app.post('/api/payments/test-set-pro', async (req, res) => {
   }
 });
 
-// Debug endpoint - List all users
-app.get('/api/debug/all-users', async (req, res) => {
-  try {
-    const snapshot = await db.collection('users').get();
-    const users = [];
-    snapshot.forEach(doc => {
-      users.push({ id: doc.id, ...doc.data() });
-    });
-    res.json({ 
-      success: true, 
-      count: users.length,
-      users: users
-    });
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// server.js - Webhook endpoint (KEEP THIS)
+// Webhook endpoint
 app.post('/api/payments/webhook', async (req, res) => {
   const event = req.body;
   console.log('📨 Webhook received:', JSON.stringify(event, null, 2));
@@ -228,40 +288,91 @@ app.post('/api/payments/webhook', async (req, res) => {
     console.log('💰 Payment successful!');
     console.log('   Reference:', reference);
     console.log('   User ID:', userId);
-    console.log('   Email:', customer?.email);
 
     if (userId) {
-      try {
-        // 🔥 SAVE TO FIRESTORE
-        const userRef = db.collection('users').doc(userId);
-        await userRef.set({
-          userId: userId,
-          isPro: true,
-          proSince: new Date().toISOString(),
-          lastPaymentRef: reference,
-          email: customer?.email,
-          amount: event.data.amount,
-          plan: metadata?.plan || 'unknown',
-          verifiedAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-          webhookReceived: true
-        }, { merge: true });
-        
-        console.log('✅ Webhook: Pro status updated in Firestore for user:', userId);
-        
-        // Verify it was saved
-        const doc = await userRef.get();
-        console.log('📝 Verified Firestore data:', doc.data());
-      } catch (error) {
-        console.error('❌ Webhook Firestore error:', error);
-      }
+      const userData = {
+        isPro: true,
+        proSince: new Date().toISOString(),
+        lastPaymentRef: reference,
+        email: customer?.email,
+        amount: event.data.amount,
+        plan: metadata?.plan || 'unknown',
+        verifiedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        webhookReceived: true
+      };
+      
+      await saveUserData(userId, userData);
+      console.log('✅ Webhook: Pro status updated for user:', userId);
     } else {
       console.warn('⚠️ Webhook: No userId in metadata');
     }
   }
 
-  // Always return 200 to Paystack
   res.sendStatus(200);
+});
+
+// Debug endpoint - List all users
+app.get('/api/debug/all-users', async (req, res) => {
+  try {
+    if (isFirebaseAvailable && db) {
+      const snapshot = await db.collection('users').get();
+      const users = [];
+      snapshot.forEach(doc => {
+        users.push({ id: doc.id, ...doc.data() });
+      });
+      res.json({ 
+        success: true, 
+        source: 'Firebase',
+        count: users.length,
+        users: users
+      });
+    } else {
+      const data = readUsers();
+      res.json({ 
+        success: true, 
+        source: 'JSON file',
+        count: Object.keys(data.users).length,
+        users: data.users
+      });
+    }
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Test Firebase connection
+app.get('/api/test-firebase', async (req, res) => {
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.json({ 
+        success: false, 
+        error: 'Firebase is not initialized',
+        isFirebaseAvailable: isFirebaseAvailable,
+        dbExists: !!db
+      });
+    }
+    
+    const testId = 'test_' + Date.now();
+    await db.collection('test').doc(testId).set({
+      test: true,
+      timestamp: new Date().toISOString()
+    });
+    
+    const doc = await db.collection('test').doc(testId).get();
+    const data = doc.data();
+    
+    res.json({ 
+      success: true, 
+      message: 'Firebase is working!',
+      data: data
+    });
+  } catch (error) {
+    res.status(500).json({ 
+      success: false, 
+      error: error.message 
+    });
+  }
 });
 
 // ============ SUPPORTED TRANSLATIONS ============
