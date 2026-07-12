@@ -1,73 +1,34 @@
 // backend/config/firebase-admin.js
-// Simple fallback - store Pro status in a local file instead of Firestore
-const fs = require('fs');
-const path = require('path');
+const admin = require('firebase-admin');
 
-const DATA_FILE = path.join(__dirname, '..', 'data', 'users.json');
-
-// Ensure data directory exists
-const dataDir = path.join(__dirname, '..', 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Initialize empty data if file doesn't exist
-if (!fs.existsSync(DATA_FILE)) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify({ users: {} }), 'utf8');
-}
-
-function readData() {
-  try {
-    const raw = fs.readFileSync(DATA_FILE, 'utf8');
-    return JSON.parse(raw);
-  } catch {
-    return { users: {} };
+// Initialize Firebase Admin SDK
+if (!admin.apps.length) {
+  // Check if we have a service account JSON in environment
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    // Parse the service account from environment variable
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://logos-daily.firebaseio.com',
+    });
+  } else {
+    // Fallback for development: use Application Default Credentials
+    try {
+      admin.initializeApp({
+        credential: admin.credential.applicationDefault(),
+        databaseURL: process.env.FIREBASE_DATABASE_URL || 'https://logos-daily.firebaseio.com',
+      });
+    } catch (error) {
+      console.error('❌ Failed to initialize Firebase Admin:', error);
+    }
   }
 }
 
-function writeData(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
+// Get Firestore database instance
+const db = admin.firestore();
 
-// Simple Firestore-like API
-const db = {
-  collection: (name) => ({
-    doc: (id) => ({
-      get: async () => {
-        const data = readData();
-        const user = data.users[id];
-        return {
-          exists: !!user,
-          data: () => user || null,
-        };
-      },
-      set: async (newData, options = {}) => {
-        const data = readData();
-        if (options.merge) {
-          data.users[id] = { ...data.users[id], ...newData };
-        } else {
-          data.users[id] = newData;
-        }
-        writeData(data);
-      },
-      update: async (updates) => {
-        const data = readData();
-        data.users[id] = { ...data.users[id], ...updates };
-        writeData(data);
-      },
-    }),
-  }),
+// Export the admin instance and database
+module.exports = {
+  admin,
+  db,
 };
-
-const auth = {
-  // Basic auth placeholder
-};
-
-const admin = {
-  firestore: () => db,
-  auth: () => auth,
-};
-
-console.log('✅ Local storage initialized (Firebase Admin not configured)');
-
-module.exports = { admin, db, auth };

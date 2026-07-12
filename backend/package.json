@@ -1,7 +1,7 @@
 {
   "name": "logos-daily-backend",
   "version": "1.0.0",
-  "description": "Backend API for Logos Daily Bible App",
+  "description": "Backend API for Synthesis Bible App",
   "main": "server.js",
   "scripts": {
     "dev": "nodemon server.js",

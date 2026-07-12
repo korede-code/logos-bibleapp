@@ -3,6 +3,7 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const app = express();
+const { db } = require('./config/firebase-admin');
 const axios = require('axios');
 
 
@@ -21,36 +22,15 @@ app.use(express.json());
 
 console.log('🚀 Starting Synthesis Bible API Server...');
 
-// ============ PAYMENT ROUTES ============
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
-const DATA_FILE = path.join(__dirname, 'data', 'users.json');
-
-// Ensure data directory exists
-const dataDir = path.join(__dirname, 'data');
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// Read users helper
-function readUsers() {
-  if (fs.existsSync(DATA_FILE)) {
-    return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
-  }
-  return { users: {} };
-}
-
-// Write users helper
-function writeUsers(data) {
-  fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-}
-
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// ============ PAYMENT ROUTES ============
+const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
 
-// Initialize payment - FIXED
+// Initialize payment
 app.post('/api/payments/initialize', async (req, res) => {
   try {
     const { email, amount, planId, userId, isMobile } = req.body;
@@ -61,11 +41,7 @@ app.post('/api/payments/initialize', async (req, res) => {
     console.log('💰 Payment init:', { email, amount, planId, userId, reference });
 
     if (!process.env.PAYSTACK_SECRET) {
-      console.error('❌ PAYSTACK_SECRET is not set');
-      return res.status(500).json({ 
-        success: false, 
-        error: 'Payment service not configured' 
-      });
+      return res.status(500).json({ success: false, error: 'Payment service not configured' });
     }
 
     const response = await axios.post(
@@ -93,44 +69,29 @@ app.post('/api/payments/initialize', async (req, res) => {
         reference: reference
       });
     } else {
-      res.status(400).json({ 
-        success: false, 
-        error: response.data.message || 'Payment initialization failed' 
-      });
+      res.status(400).json({ success: false, error: response.data.message });
     }
   } catch (error) {
-    console.error('❌ Payment init error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      success: false, 
-      error: error.response?.data?.message || error.message || 'Payment initialization failed' 
-    });
+    console.error('Payment init error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Verify payment
-// Verify payment - FIXED
-// In server.js - Verification endpoint
+// Verify payment - SAVES TO FIRESTORE
 app.get('/api/payments/verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log('🔍 Verifying payment:', reference);
 
   if (!process.env.PAYSTACK_SECRET) {
-    console.error('❌ PAYSTACK_SECRET is not set');
     return res.json({ success: false, verified: false, message: 'Payment service not configured' });
   }
 
   try {
-    console.log('📡 Calling Paystack API to verify:', reference);
-    
     const response = await axios.get(
       `https://api.paystack.co/transaction/verify/${reference}`,
       { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
     );
 
-    console.log('📦 Paystack response status:', response.data.status);
-    console.log('📦 Paystack data status:', response.data.data?.status);
-
-    // Check if payment was successful
     const isSuccessful = response.data.status && response.data.data.status === 'success';
     
     if (!isSuccessful) {
@@ -138,47 +99,39 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
       return res.json({ success: false, verified: false });
     }
 
-    // Payment is successful - update user's Pro status
     const userId = response.data.data.metadata?.userId;
     console.log('✅ Payment verified! userId:', userId);
 
     if (userId) {
-      const users = readUsers();
-      console.log('📝 Current users:', Object.keys(users.users));
-      
-      // Update user's Pro status
-      users.users[userId] = { 
-        isPro: true, 
+      // 🔥 SAVE TO FIRESTORE
+      const userRef = db.collection('users').doc(userId);
+      await userRef.set({
+        userId: userId,
+        isPro: true,
         proSince: new Date().toISOString(),
         lastPaymentRef: reference,
         email: response.data.data.customer?.email,
         amount: response.data.data.amount,
-        plan: response.data.data.metadata?.plan
-      };
+        plan: response.data.data.metadata?.plan,
+        verifiedAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }, { merge: true }); // merge: true prevents overwriting other user data
       
-      writeUsers(users);
-      console.log('✅ Pro status updated for user:', userId);
-      console.log('📝 Updated users:', Object.keys(users.users));
+      console.log('✅ Pro status saved to Firestore for user:', userId);
       
       // Verify it was saved
-      const savedUser = readUsers();
-      console.log('📝 Verified saved user:', savedUser.users[userId]);
-      
-      res.json({ 
-        success: true, 
-        verified: true, 
-        userId: userId,
-        data: response.data.data
-      });
+      const savedDoc = await userRef.get();
+      console.log('📝 Verified Firestore data:', savedDoc.data());
     } else {
-      console.warn('⚠️ No userId in metadata - cannot update Pro status');
-      res.json({ 
-        success: true, 
-        verified: true, 
-        userId: null,
-        warning: 'No userId in metadata'
-      });
+      console.warn('⚠️ No userId in metadata');
     }
+
+    res.json({ 
+      success: true, 
+      verified: true, 
+      userId: userId,
+      data: response.data.data
+    });
 
   } catch (error) {
     console.error('❌ Verification error:', error.response?.data || error.message);
@@ -188,20 +141,18 @@ app.get('/api/payments/verify/:reference', async (req, res) => {
       error: error.response?.data?.message || error.message || 'Verification failed' 
     });
   }
-});
+})
 
-// Check Pro status
-// In server.js - Pro status endpoint
-app.get('/api/payments/pro-status/:userId', (req, res) => {
+// Check Pro status - READS FROM FIRESTORE
+app.get('/api/payments/pro-status/:userId', async (req, res) => {
   const { userId } = req.params;
   console.log('🔍 Checking Pro status for userId:', userId);
   
   try {
-    const data = readUsers();
-    console.log('📝 All user IDs:', Object.keys(data.users));
-    
-    const userData = data.users[userId];
-    console.log('📝 User data for', userId, ':', userData);
+    // 🔥 READ FROM FIRESTORE
+    const userDoc = await db.collection('users').doc(userId).get();
+    const userData = userDoc.data();
+    console.log('📝 Firestore result:', userData);
     
     const isPro = userData?.isPro === true;
     console.log('✅ Is Pro:', isPro);
@@ -221,10 +172,8 @@ app.get('/api/payments/pro-status/:userId', (req, res) => {
   }
 });
 
-
-// Set Pro status (test endpoint)
-// TEST ENDPOINT - Manually set Pro status for testing
-app.post('/api/payments/test-set-pro', (req, res) => {
+// Test endpoint - Manual set Pro
+app.post('/api/payments/test-set-pro', async (req, res) => {
   try {
     const { userId } = req.body;
     
@@ -232,75 +181,86 @@ app.post('/api/payments/test-set-pro', (req, res) => {
       return res.status(400).json({ success: false, error: 'userId required' });
     }
     
-    const users = readUsers();
-    users.users[userId] = { 
-      isPro: true, 
+    // 🔥 SAVE TO FIRESTORE
+    await db.collection('users').doc(userId).set({
+      userId: userId,
+      isPro: true,
       proSince: new Date().toISOString(),
-      test: true 
-    };
-    writeUsers(users);
+      test: true,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
     
+    console.log('✅ Pro status manually set for:', userId);
     res.json({ success: true, isPro: true, userId });
   } catch (error) {
     console.error('❌ Error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// Add this to server.js
-app.post('/api/payments/manual-activate', async (req, res) => {
+
+// Debug endpoint - List all users
+app.get('/api/debug/all-users', async (req, res) => {
   try {
-    const { userId, reference } = req.body;
-    console.log('🔧 Manual activation for userId:', userId, 'reference:', reference);
-    
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId required' });
-    }
-    
-    const users = readUsers();
-    users.users[userId] = { 
-      isPro: true, 
-      proSince: new Date().toISOString(),
-      lastPaymentRef: reference || 'manual',
-      manualActivation: true
-    };
-    writeUsers(users);
-    
-    console.log('✅ Pro status manually activated for:', userId);
-    res.json({ success: true, isPro: true, userId });
+    const snapshot = await db.collection('users').get();
+    const users = [];
+    snapshot.forEach(doc => {
+      users.push({ id: doc.id, ...doc.data() });
+    });
+    res.json({ 
+      success: true, 
+      count: users.length,
+      users: users
+    });
   } catch (error) {
-    console.error('❌ Manual activation error:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// Webhook - IMPORTANT: Parse raw body for Paystack
-app.post('/api/payments/webhook', express.json(), (req, res) => {
+// server.js - Webhook endpoint (KEEP THIS)
+app.post('/api/payments/webhook', async (req, res) => {
   const event = req.body;
-  console.log('📨 Webhook received:', JSON.stringify(event));
+  console.log('📨 Webhook received:', JSON.stringify(event, null, 2));
 
   if (event.event === 'charge.success') {
-    const userId = event.data?.metadata?.userId;
-    const reference = event.data?.reference;
-    
+    const { reference, metadata, customer } = event.data;
+    const userId = metadata?.userId;
+
     console.log('💰 Payment successful!');
-    console.log('   User ID:', userId);
     console.log('   Reference:', reference);
-    
+    console.log('   User ID:', userId);
+    console.log('   Email:', customer?.email);
+
     if (userId) {
-      const data = readUsers();
-      data.users[userId] = {
-        isPro: true,
-        proSince: new Date().toISOString(),
-        lastPaymentRef: reference,
-        plan: event.data?.metadata?.plan || 'monthly',
-        amount: event.data?.amount,
-        email: event.data?.customer?.email,
-      };
-      writeUsers(data);
-      console.log('✅ Pro activated for:', userId);
+      try {
+        // 🔥 SAVE TO FIRESTORE
+        const userRef = db.collection('users').doc(userId);
+        await userRef.set({
+          userId: userId,
+          isPro: true,
+          proSince: new Date().toISOString(),
+          lastPaymentRef: reference,
+          email: customer?.email,
+          amount: event.data.amount,
+          plan: metadata?.plan || 'unknown',
+          verifiedAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          webhookReceived: true
+        }, { merge: true });
+        
+        console.log('✅ Webhook: Pro status updated in Firestore for user:', userId);
+        
+        // Verify it was saved
+        const doc = await userRef.get();
+        console.log('📝 Verified Firestore data:', doc.data());
+      } catch (error) {
+        console.error('❌ Webhook Firestore error:', error);
+      }
+    } else {
+      console.warn('⚠️ Webhook: No userId in metadata');
     }
   }
-  
+
+  // Always return 200 to Paystack
   res.sendStatus(200);
 });
 
