@@ -41,6 +41,7 @@ const PaymentCallback: React.FC = () => {
       if (data.success && data.verified) {
         // Get userId from multiple sources
         let userId = localStorage.getItem('pendingProUserId');
+        console.log('📝 pendingProUserId:', userId);
         console.log('📝 pendingProUserId from localStorage:', userId);
         
         if (!userId) {

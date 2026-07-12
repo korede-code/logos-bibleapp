@@ -250,6 +250,58 @@ app.get('/api/payments/pro-status/:userId', async (req, res) => {
   }
 });
 
+// server.js - Add this test endpoint
+app.get('/api/test-verify/:reference', async (req, res) => {
+  const { reference } = req.params;
+  console.log('🧪 Manual verification for:', reference);
+  
+  console.log('🔍🔍🔍 VERIFICATION ENDPOINT CALLED 🔍🔍🔍');
+  console.log('🔍 Reference:', reference);
+  console.log('🔍 Full URL:', req.originalUrl);
+  console.log('🔍 Headers:', req.headers);
+  
+  try {
+    const response = await axios.get(
+      `https://api.paystack.co/transaction/verify/${reference}`,
+      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
+    );
+    
+    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
+    
+    if (response.data.status && response.data.data.status === 'success') {
+      const userId = response.data.data.metadata?.userId;
+      console.log('✅ Payment verified! userId:', userId);
+      
+      if (userId) {
+        const userData = {
+          isPro: true,
+          proSince: new Date().toISOString(),
+          lastPaymentRef: reference,
+          email: response.data.data.customer?.email,
+          amount: response.data.data.amount,
+          plan: response.data.data.metadata?.plan,
+          verifiedAt: new Date().toISOString()
+        };
+        
+        await saveUserData(userId, userData);
+        console.log('✅ Pro status saved for user:', userId);
+      }
+      
+      res.json({ 
+        success: true, 
+        verified: true, 
+        userId: userId,
+        data: response.data.data
+      });
+    } else {
+      res.json({ success: false, verified: false });
+    }
+  } catch (error) {
+    console.error('❌ Error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Test endpoint - Manual set Pro
 app.post('/api/payments/test-set-pro', async (req, res) => {
   try {

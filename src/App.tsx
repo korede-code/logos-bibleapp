@@ -76,6 +76,7 @@ const App: React.FC = () => {
           navigate('payment-callback');
         
         // Verify payment
+          console.log('🔍 Verifying payment via deep link...');
           const response = await fetch(
             `https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`
           );
@@ -85,6 +86,8 @@ const App: React.FC = () => {
         
           if (result.success && result.verified) {
             const userId = localStorage.getItem('pendingProUserId');
+            console.log('📝 User ID for Pro activation:', userId);
+
             if (userId) {
               localStorage.setItem(`isPro_${userId}`, 'true');
               localStorage.setItem('logos_daily_pro', 'true');
@@ -92,7 +95,11 @@ const App: React.FC = () => {
               localStorage.removeItem('pendingProPlan');
               setProStatus(true);
               console.log('✅ Pro status activated!');
+            } else {
+              console.warn('⚠️ No pendingProUserId found');
             }
+          } else {
+            console.error('❌ Verification failed:', result);
           }
         }
       } catch (error) {
