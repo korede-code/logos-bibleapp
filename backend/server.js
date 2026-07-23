@@ -781,12 +781,25 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
     const { translation, book, chapter } = req.params;
     const trans = translation.toLowerCase();
     
-    // Known verse counts for single-chapter books
+    // ✅ 1. CHECK HARDCODED DATA FIRST (instant, reliable)
+    if (singleChapterBooks[book] && singleChapterBooks[book][chapter]) {
+      const verses = singleChapterBooks[book][chapter].map((text, i) => ({
+        book,
+        chapter: parseInt(chapter),
+        verse: i + 1,
+        text,
+        translation: translation.toUpperCase()
+      }));
+      
+      console.log(`✅ Hardcoded: ${verses.length} verses for ${book}`);
+      return res.json({ success: true, data: verses, source: 'local' });
+    }
+    
+    // ✅ 2. TRY FETCHING EACH VERSE INDIVIDUALLY (for single-chapter books not in hardcoded data)
     const singleChapterVerseCounts = {
       'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
     };
     
-    // For single-chapter books, fetch each verse individually
     if (singleChapterVerseCounts[book]) {
       const totalVerses = singleChapterVerseCounts[book];
       const allVerses = [];
@@ -821,11 +834,11 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
         }
       }
       
-      console.log(`✅ Single-chapter: ${allVerses.length} verses for ${book}`);
+      console.log(`✅ Verse-by-verse: ${allVerses.length} verses for ${book}`);
       return res.json({ success: true, data: allVerses });
     }
     
-    // Regular books - use normal chapter fetch
+    // ✅ 3. REGULAR BOOKS - Normal chapter fetch
     const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${trans}`;
     console.log('📖 Fetching:', url);
     
