@@ -943,7 +943,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     }
     
     // Fallback for short books
-    const shortBooks: Record<string, number> = {
+    const shortBooks = {
       'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
       'Titus': 16, '2 Thessalonians': 18, '1 Timothy': 18, '2 Timothy': 26,
     };
