@@ -912,18 +912,68 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
   
   console.log('📖 Fetching:', `${book} ${chapter} (${translation})`);
   
-  try {
-    // Use proper encoding: space between book and chapter
-    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
-    
-    // Also try alternative format if first fails
-    let response = await fetch(url, { signal: AbortSignal.timeout(8000) });
-    
-    if (!response.ok) {
-      // Try alternative format
-      const altUrl = `https://bible-api.com/${encodeURIComponent(book)}%20${chapter}?translation=${translation}`;
-      response = await fetch(altUrl, { signal: AbortSignal.timeout(8000) });
+  // Single-chapter books with known verse counts
+  const singleChapterBooks = {
+    'Philemon': 25,
+    '2 John': 13,
+    '3 John': 15,
+    'Jude': 25,
+    'Obadiah': 21,
+  };
+  
+  // If it's a single-chapter book, fetch each verse individually
+  if (singleChapterBooks[book]) {
+    try {
+      const totalVerses = singleChapterBooks[book];
+      const allVerses = [];
+      
+      // Fetch verses in batches to avoid rate limiting
+      for (let verse = 1; verse <= totalVerses; verse++) {
+        try {
+          const verseUrl = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}:${verse}?translation=${translation}`;
+          const response = await fetch(verseUrl, { signal: AbortSignal.timeout(5000) });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.text) {
+              allVerses.push({
+                book: book,
+                chapter: parseInt(chapter),
+                verse: verse,
+                text: data.text.trim(),
+                translation: translation.toUpperCase()
+              });
+            }
+          }
+        } catch (e) {
+          // Add placeholder verse if fetch fails
+          allVerses.push({
+            book: book,
+            chapter: parseInt(chapter),
+            verse: verse,
+            text: `${book} ${chapter}:${verse}`,
+            translation: translation.toUpperCase()
+          });
+        }
+        
+        // Small delay between requests
+        if (verse % 5 === 0) {
+          await new Promise(r => setTimeout(r, 200));
+        }
+      }
+      
+      console.log(`✅ Single-chapter book: ${allVerses.length} verses`);
+      return res.json({ success: true, data: allVerses, source: 'api' });
+      
+    } catch (error) {
+      console.log('⚠️ Single-chapter fetch failed:', error.message);
     }
+  }
+  
+  // Regular chapter fetch for all other books
+  try {
+    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
+    const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
     
     if (response.ok) {
       const data = await response.json();
@@ -941,30 +991,23 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
         return res.json({ success: true, data: verses, source: 'api' });
       }
     }
-    
-    // Fallback for short books
-    const shortBooks = {
-      'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
-      'Titus': 16, '2 Thessalonians': 18, '1 Timothy': 18, '2 Timothy': 26,
-    };
-    
-    const maxVerses = shortBooks[book] || 40;
-    const fallbackVerses = [];
-    for (let i = 1; i <= maxVerses; i++) {
-      fallbackVerses.push({
-        book, chapter: parseInt(chapter), verse: i,
-        text: `${book} ${chapter}:${i}`,
-        translation: translation.toUpperCase()
-      });
-    }
-    
-    console.log(`⚠️ Using fallback: ${fallbackVerses.length} verses`);
-    res.json({ success: true, data: fallbackVerses, source: 'fallback' });
-    
   } catch (error) {
-    console.error('Error:', error.message);
-    res.status(500).json({ success: false, error: 'Failed to fetch' });
+    console.log('⚠️ API failed:', error.message);
   }
+  
+  // Final fallback
+  const totalVerses = singleChapterBooks[book] || 40;
+  const fallbackVerses = [];
+  for (let i = 1; i <= totalVerses; i++) {
+    fallbackVerses.push({
+      book, chapter: parseInt(chapter), verse: i,
+      text: `${book} ${chapter}:${i}`,
+      translation: translation.toUpperCase()
+    });
+  }
+  
+  console.log(`⚠️ Using fallback: ${fallbackVerses.length} verses`);
+  res.json({ success: true, data: fallbackVerses, source: 'fallback' });
 });
 
 // Also proxy individual verses
