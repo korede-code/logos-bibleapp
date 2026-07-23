@@ -254,7 +254,7 @@ app.get('/api/payments/pro-status/:userId', async (req, res) => {
 app.get('/api/test-verify/:reference', async (req, res) => {
   const { reference } = req.params;
   console.log('🧪 Manual verification for:', reference);
-  
+
   console.log('🔍🔍🔍 VERIFICATION ENDPOINT CALLED 🔍🔍🔍');
   console.log('🔍 Reference:', reference);
   console.log('🔍 Full URL:', req.originalUrl);
@@ -302,32 +302,6 @@ app.get('/api/test-verify/:reference', async (req, res) => {
   }
 });
 
-// Test endpoint - Manual set Pro
-app.post('/api/payments/test-set-pro', async (req, res) => {
-  try {
-    const { userId } = req.body;
-    
-    if (!userId) {
-      return res.status(400).json({ success: false, error: 'userId required' });
-    }
-    
-    const userData = {
-      isPro: true,
-      proSince: new Date().toISOString(),
-      test: true,
-      updatedAt: new Date().toISOString()
-    };
-    
-    await saveUserData(userId, userData);
-    console.log('✅ Pro status manually set for:', userId);
-    
-    res.json({ success: true, isPro: true, userId });
-  } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
 // Webhook endpoint
 app.post('/api/payments/webhook', async (req, res) => {
   const event = req.body;
@@ -362,69 +336,6 @@ app.post('/api/payments/webhook', async (req, res) => {
   }
 
   res.sendStatus(200);
-});
-
-// Debug endpoint - List all users
-app.get('/api/debug/all-users', async (req, res) => {
-  try {
-    if (isFirebaseAvailable && db) {
-      const snapshot = await db.collection('users').get();
-      const users = [];
-      snapshot.forEach(doc => {
-        users.push({ id: doc.id, ...doc.data() });
-      });
-      res.json({ 
-        success: true, 
-        source: 'Firebase',
-        count: users.length,
-        users: users
-      });
-    } else {
-      const data = readUsers();
-      res.json({ 
-        success: true, 
-        source: 'JSON file',
-        count: Object.keys(data.users).length,
-        users: data.users
-      });
-    }
-  } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Test Firebase connection
-app.get('/api/test-firebase', async (req, res) => {
-  try {
-    if (!isFirebaseAvailable || !db) {
-      return res.json({ 
-        success: false, 
-        error: 'Firebase is not initialized',
-        isFirebaseAvailable: isFirebaseAvailable,
-        dbExists: !!db
-      });
-    }
-    
-    const testId = 'test_' + Date.now();
-    await db.collection('test').doc(testId).set({
-      test: true,
-      timestamp: new Date().toISOString()
-    });
-    
-    const doc = await db.collection('test').doc(testId).get();
-    const data = doc.data();
-    
-    res.json({ 
-      success: true, 
-      message: 'Firebase is working!',
-      data: data
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
 });
 
 // ============ SUPPORTED TRANSLATIONS ============
@@ -1001,27 +912,18 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
   
   console.log('📖 Fetching:', `${book} ${chapter} (${translation})`);
   
-  // Generate fallback verses in case API fails
-  const fallbackVerses = [];
-  const maxVerses = book === 'Psalms' || book === 'Psalm' ? 176 : 40;
-  for (let i = 1; i <= maxVerses; i++) {
-    fallbackVerses.push({
-      book: book,
-      chapter: parseInt(chapter),
-      verse: i,
-      text: `${book} ${chapter}:${i} - Content unavailable offline`,
-      translation: translation.toUpperCase()
-    });
-  }
-  
   try {
+    // Use proper encoding: space between book and chapter
     const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
     
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000);
+    // Also try alternative format if first fails
+    let response = await fetch(url, { signal: AbortSignal.timeout(8000) });
     
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(timeout);
+    if (!response.ok) {
+      // Try alternative format
+      const altUrl = `https://bible-api.com/${encodeURIComponent(book)}%20${chapter}?translation=${translation}`;
+      response = await fetch(altUrl, { signal: AbortSignal.timeout(8000) });
+    }
     
     if (response.ok) {
       const data = await response.json();
@@ -1040,14 +942,28 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
       }
     }
     
-    // API failed - return fallback
-    console.log('⚠️ API failed, using fallback');
+    // Fallback for short books
+    const shortBooks: Record<string, number> = {
+      'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
+      'Titus': 16, '2 Thessalonians': 18, '1 Timothy': 18, '2 Timothy': 26,
+    };
+    
+    const maxVerses = shortBooks[book] || 40;
+    const fallbackVerses = [];
+    for (let i = 1; i <= maxVerses; i++) {
+      fallbackVerses.push({
+        book, chapter: parseInt(chapter), verse: i,
+        text: `${book} ${chapter}:${i}`,
+        translation: translation.toUpperCase()
+      });
+    }
+    
+    console.log(`⚠️ Using fallback: ${fallbackVerses.length} verses`);
     res.json({ success: true, data: fallbackVerses, source: 'fallback' });
     
   } catch (error) {
-    // Always return fallback, never 500
-    console.log('⚠️ Error, using fallback:', error.message);
-    res.json({ success: true, data: fallbackVerses, source: 'fallback' });
+    console.error('Error:', error.message);
+    res.status(500).json({ success: false, error: 'Failed to fetch' });
   }
 });
 
