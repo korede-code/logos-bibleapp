@@ -6,6 +6,8 @@ const app = express();
 //const { db } = require('./config/firebase-admin');
 const axios = require('axios');
 
+const singleChapterBooks = require('./data/single-chapter-books.json');
+
 
 // Try to load Firebase, but continue if it fails
 let db = null;
@@ -912,8 +914,23 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
   
   console.log('📖 Fetching:', `${book} ${chapter} (${translation})`);
   
-  // Single-chapter books with known verse counts
-  const singleChapterBooks = {
+  // ===== HARDCODED SINGLE-CHAPTER BOOKS =====
+  // These books have complete text stored locally for instant loading
+  if (singleChapterBooks[book] && singleChapterBooks[book][chapter]) {
+    const verses = singleChapterBooks[book][chapter].map((text, i) => ({
+      book,
+      chapter: parseInt(chapter),
+      verse: i + 1,
+      text,
+      translation: translation.toUpperCase()
+    }));
+    
+    console.log(`✅ Local data: ${verses.length} verses for ${book}`);
+    return res.json({ success: true, data: verses, source: 'local' });
+  }
+  
+  // ===== SINGLE-CHAPTER BOOKS (API FALLBACK) =====
+  const singleChapterVerseCounts = {
     'Philemon': 25,
     '2 John': 13,
     '3 John': 15,
@@ -921,13 +938,11 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     'Obadiah': 21,
   };
   
-  // If it's a single-chapter book, fetch each verse individually
-  if (singleChapterBooks[book]) {
+  if (singleChapterVerseCounts[book]) {
     try {
-      const totalVerses = singleChapterBooks[book];
+      const totalVerses = singleChapterVerseCounts[book];
       const allVerses = [];
       
-      // Fetch verses in batches to avoid rate limiting
       for (let verse = 1; verse <= totalVerses; verse++) {
         try {
           const verseUrl = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}:${verse}?translation=${translation}`;
@@ -937,32 +952,28 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
             const data = await response.json();
             if (data.text) {
               allVerses.push({
-                book: book,
+                book,
                 chapter: parseInt(chapter),
-                verse: verse,
+                verse,
                 text: data.text.trim(),
                 translation: translation.toUpperCase()
               });
             }
           }
         } catch (e) {
-          // Add placeholder verse if fetch fails
           allVerses.push({
-            book: book,
-            chapter: parseInt(chapter),
-            verse: verse,
+            book, chapter: parseInt(chapter), verse,
             text: `${book} ${chapter}:${verse}`,
             translation: translation.toUpperCase()
           });
         }
         
-        // Small delay between requests
         if (verse % 5 === 0) {
           await new Promise(r => setTimeout(r, 200));
         }
       }
       
-      console.log(`✅ Single-chapter book: ${allVerses.length} verses`);
+      console.log(`✅ Single-chapter API: ${allVerses.length} verses`);
       return res.json({ success: true, data: allVerses, source: 'api' });
       
     } catch (error) {
@@ -970,7 +981,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     }
   }
   
-  // Regular chapter fetch for all other books
+  // ===== REGULAR BOOKS =====
   try {
     const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${translation}`;
     const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
@@ -995,8 +1006,8 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     console.log('⚠️ API failed:', error.message);
   }
   
-  // Final fallback
-  const totalVerses = singleChapterBooks[book] || 40;
+  // ===== FINAL FALLBACK =====
+  const totalVerses = singleChapterVerseCounts[book] || 40;
   const fallbackVerses = [];
   for (let i = 1; i <= totalVerses; i++) {
     fallbackVerses.push({
@@ -1006,7 +1017,7 @@ app.get('/api/bible/:book/:chapter', async (req, res) => {
     });
   }
   
-  console.log(`⚠️ Using fallback: ${fallbackVerses.length} verses`);
+  console.log(`⚠️ Fallback: ${fallbackVerses.length} verses`);
   res.json({ success: true, data: fallbackVerses, source: 'fallback' });
 });
 
