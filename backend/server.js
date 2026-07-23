@@ -780,8 +780,53 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
   try {
     const { translation, book, chapter } = req.params;
     const trans = translation.toLowerCase();
-    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${trans}`;
     
+    // Known verse counts for single-chapter books
+    const singleChapterVerseCounts = {
+      'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
+    };
+    
+    // For single-chapter books, fetch each verse individually
+    if (singleChapterVerseCounts[book]) {
+      const totalVerses = singleChapterVerseCounts[book];
+      const allVerses = [];
+      
+      for (let verse = 1; verse <= totalVerses; verse++) {
+        try {
+          const verseUrl = `https://bible-api.com/${encodeURIComponent(book)}+1:${verse}?translation=${trans}`;
+          const response = await fetch(verseUrl, { signal: AbortSignal.timeout(5000) });
+          
+          if (response.ok) {
+            const data = await response.json();
+            if (data.text) {
+              allVerses.push({
+                book,
+                chapter: parseInt(chapter),
+                verse,
+                text: data.text.trim(),
+                translation: translation.toUpperCase()
+              });
+            }
+          }
+        } catch (e) {
+          allVerses.push({
+            book, chapter: parseInt(chapter), verse,
+            text: `${book} ${chapter}:${verse}`,
+            translation: translation.toUpperCase()
+          });
+        }
+        
+        if (verse % 5 === 0) {
+          await new Promise(r => setTimeout(r, 150));
+        }
+      }
+      
+      console.log(`✅ Single-chapter: ${allVerses.length} verses for ${book}`);
+      return res.json({ success: true, data: allVerses });
+    }
+    
+    // Regular books - use normal chapter fetch
+    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${trans}`;
     console.log('📖 Fetching:', url);
     
     const response = await fetch(url);
@@ -801,14 +846,17 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
         }))
       });
     } else {
-      res.json({ success: false, error: 'No verses found' });
+      throw new Error('No verses found');
     }
   } catch (error) {
     console.error('Bible fetch error:', error.message);
-    // Return fallback verses
     const { book, chapter, translation } = req.params;
+    const verseCounts = {
+      'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
+    };
+    const maxVerses = verseCounts[book] || 30;
     const verses = [];
-    for (let i = 1; i <= 30; i++) {
+    for (let i = 1; i <= maxVerses; i++) {
       verses.push({
         book, chapter: parseInt(chapter), verse: i,
         text: `${book} ${chapter}:${i}`,
@@ -817,7 +865,7 @@ app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
     }
     res.json({ success: true, data: verses, source: 'fallback' });
   }
-}); 
+});
   
 
   // 2. Try API for other books
