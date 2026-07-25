@@ -5,23 +5,126 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delete Account - Synthesis Bible</title>
     <style>
-        body { font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 40px 20px; background: #1a1a2e; color: #fff; text-align: center; }
-        h1 { color: #e53935; }
-        .btn { display: inline-block; background: #e53935; color: white; padding: 12px 24px; border-radius: 8px; text-decoration: none; margin: 10px; font-size: 16px; }
-        .btn-outline { background: transparent; border: 2px solid #e53935; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+            max-width: 700px; 
+            margin: 0 auto; 
+            padding: 40px 20px; 
+            background: #1a1a2e; 
+            color: #fff; 
+            line-height: 1.8;
+        }
+        h1 { color: #e53935; text-align: center; margin-bottom: 10px; }
+        .subtitle { text-align: center; color: #aaa; margin-bottom: 40px; }
+        h2 { color: #ccc; margin-top: 30px; margin-bottom: 10px; }
+        p, li { color: #ccc; }
+        .method-box { 
+            background: #2a2a3e; 
+            padding: 20px; 
+            border-radius: 12px; 
+            margin: 20px 0; 
+            border-left: 4px solid #8B4513;
+        }
+        .method-box h3 { color: #8B4513; margin-bottom: 10px; }
+        .btn { 
+            display: inline-block; 
+            background: #e53935; 
+            color: white; 
+            padding: 14px 28px; 
+            border-radius: 8px; 
+            text-decoration: none; 
+            margin: 10px 5px; 
+            font-size: 16px; 
+            font-weight: bold;
+        }
+        .btn-outline { 
+            background: transparent; 
+            border: 2px solid #8B4513; 
+            color: #8B4513;
+        }
+        .btn:hover { opacity: 0.9; }
+        .timeline { color: #f59e0b; font-weight: bold; }
+        ul { padding-left: 20px; }
+        li { margin-bottom: 8px; }
+        footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #333; color: #666; font-size: 14px; }
+        a { color: #8B4513; }
     </style>
 </head>
 <body>
-    <h1>Delete Your Account</h1>
-    <p>To request deletion of your Synthesis Bible account and all associated data:</p>
-    <ol style="text-align: left;">
-        <li>Send an email to <strong>synthesisbible@gmail.com</strong></li>
-        <li>Subject: <strong>"Account Deletion Request"</strong></li>
-        <li>Include your registered email address</li>
-    </ol>
-    <p>Your data will be deleted within 7 business days.</p>
-    <a href="mailto:synthesisbible@gmail.com?subject=Account%20Deletion%20Request" class="btn">📧 Send Deletion Request</a>
-    <br><br>
-    <a href="/" class="btn btn-outline">Back to App</a>
+    <h1>🗑️ Delete Your Account</h1>
+    <p class="subtitle">We're sorry to see you go. Follow the steps below to permanently delete your account and all associated data.</p>
+
+    <!-- Method 1: In-App -->
+    <div class="method-box">
+        <h3>📱 Method 1: Delete from the App</h3>
+        <ol>
+            <li>Open the <strong>Synthesis Bible</strong> app</li>
+            <li>Sign in to your account</li>
+            <li>Go to <strong>Settings</strong> (gear icon)</li
+            <li>Tap <strong>"🗑️ Delete My Account & Data"</strong></li>
+            <li>Confirm the deletion when prompted</li>
+        </ol>
+    </div>
+
+    <!-- Method 2: Email -->
+    <div class="method-box">
+        <h3>📧 Method 2: Email Request</h3>
+        <ol>
+            <li>Send an email to: <strong>synthesisbible@gmail.com</strong></li>
+            <li>Use subject line: <strong>"Account Deletion Request"</strong></li>
+            <li>In the email body, include:
+                <ul>
+                    <li>Your registered email address</li>
+                    <li>Your display name (if known)</li>
+                    <li>Reason for deletion (optional - helps us improve)</li>
+                </ul>
+            </li>
+        </ol>
+        <a href="mailto:synthesisbible@gmail.com?subject=Account%20Deletion%20Request&body=Please%20delete%20my%20account%20associated%20with%20this%20email%20address.%0A%0AMy%20display%20name%3A%20%0AReason%20(optional)%3A%20" class="btn">📧 Send Deletion Email</a>
+    </div>
+
+    <!-- What gets deleted -->
+    <h2>📋 What Data Will Be Deleted</h2>
+    <div class="method-box">
+        <ul>
+            <li>✅ Your account profile (name, email, photo)</li>
+            <li>✅ All saved notes and highlights</li>
+            <li>✅ All bookmarks and reading history</li>
+            <li>✅ Prayer journal entries</li>
+            <li>✅ Reading plan progress</li>
+            <li>✅ Usage statistics and streaks</li>
+            <li>✅ All personal preferences and settings</li>
+        </ul>
+    </div>
+
+    <!-- What stays -->
+    <h2>📌 What Data Is Retained</h2>
+    <div class="method-box">
+        <ul>
+            <li>Anonymized usage statistics (cannot be linked to you)</li>
+            <li>Payment transaction records (required by law for tax purposes)</li>
+        </ul>
+    </div>
+
+    <!-- Timeline -->
+    <h2>⏱️ Timeline</h2>
+    <div class="method-box">
+        <p>Account deletion requests are processed within <span class="timeline">7 business days</span>.</p>
+        <p>You will receive a confirmation email once your data has been permanently deleted.</p>
+        <p>If you change your mind within 7 days, contact us to cancel the deletion request.</p>
+    </div>
+
+    <!-- Contact -->
+    <div style="text-align: center; margin: 40px 0;">
+        <a href="mailto:emmakorede21@gmail.com?subject=Account%20Deletion%20Request" class="btn">📧 Request Deletion</a>
+        <a href="/" class="btn btn-outline">← Back to App</a>
+    </div>
+
+    <footer>
+        <p>Synthesis Bible - Psalm 119:105</p>
+        <p>Contact: <a href="mailto:synthesisbible@gmail.com">synthesisbible@gmail.com</a></p>
+        <p><a href="/privacy.html">Privacy Policy</a></p>
+    </footer>
 </body>
 </html>
