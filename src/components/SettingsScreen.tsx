@@ -215,6 +215,21 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme, onClose, navigat
               <button onClick={handleSignOut} className="w-full py-3 text-center font-semibold text-sm flex items-center justify-center gap-2" style={{ color: '#e53935' }}>
                 <LogOut size={16} /> Sign Out
               </button>
+
+              <button
+              onClick={() => {
+                if (confirm('Are you sure you want to delete your account? This will remove all your data permanently.')) {
+                  handleSignOut();
+                  localStorage.clear();
+                  showToast('Account deletion requested. Your data will be removed within 7 days.', '#f59e0b');
+                  setTimeout(() => window.location.href = '/', 2000);
+                }
+              }}
+              className="w-full py-3 text-center font-semibold text-sm mt-2"
+              style={{ backgroundColor: '#e5393520', color: '#e53935' }}
+            >
+              🗑️ Delete My Account & Data
+            </button>
             </>
           )}
         </div>
@@ -236,7 +251,7 @@ const SettingsScreen: React.FC<SettingsScreenProps> = ({ theme, onClose, navigat
               <p className="text-xs" style={{ color: t.textFaint }}>No tracking, no ads, no data selling</p>
             </div>
             <ChevronRight size={14} style={{ color: t.textFaint }} />
-          </button>
+          </button>       
         </div>
 
         {/* Add the reminder toggle */}

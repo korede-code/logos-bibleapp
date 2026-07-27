@@ -1,321 +1,359 @@
 // src/components/ProUpgradeModal.tsx
-import React, { useState } from 'react';
-import { X, Crown, Check, Star, Zap, Shield, CreditCard, Loader2, AlertCircle } from 'lucide-react';
-import { getTheme } from '../utils/themeUtils';
+import React, { useState, useEffect } from 'react';
+import { billingService, type ProductDetails } from '../services/GooglePlayBilling';
 import { useAppStore } from '../store/appStore';
-import { updateUserProStatus } from '../config/firebase';
+import { Capacitor } from '@capacitor/core';
 
 interface ProUpgradeModalProps {
   isOpen: boolean;
   onClose: () => void;
-  userEmail: string;
-  userId: string;
-  onSuccess: () => void;
-  themeMode?: string;
+  theme?: any;
 }
 
-const PRO_PLANS = {
-  MONTHLY: { 
-    id: 'monthly', 
-    name: 'Monthly Pro', 
-    amount: 2990, // ₦2,990 in kobo
-    amountNaira: '₦2,990', 
-    days: 30,
-  },
-  YEARLY: { 
-    id: 'yearly', 
-    name: 'Yearly Pro', 
-    amount: 29900, // ₦29,900 in kobo
-    amountNaira: '₦29,900', 
-    days: 365,
-  },
-  LIFETIME: { 
-    id: 'lifetime', 
-    name: 'Lifetime Access', 
-    amount: 99900, // ₦99,900 in kobo
-    amountNaira: '₦99,900', 
-    days: 9999,
-  },
+const defaultTheme = {
+  bg: '#1a1a2e',
+  card: '#2d2d44',
+  surface: '#3d3d5c',
+  text: '#ffffff',
+  textMuted: '#888888',
+  accent: '#488AFF',
+  border: '#4a4a6a',
+  error: '#e53935',
+  success: '#4CAF50',
 };
 
-const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ 
-  isOpen, onClose, userEmail, userId, onSuccess, themeMode = 'dark' 
-}) => {
-  const [selectedPlan, setSelectedPlan] = useState(PRO_PLANS.MONTHLY);
-  const [processing, setProcessing] = useState(false);
-  const [error, setError] = useState('');
-  const { setProStatus, readerSettings } = useAppStore();
-  const theme = getTheme(themeMode as any);
+const PRODUCT_IDS = {
+  MONTHLY: 'synthesis_bible_monthly',
+  YEARLY: 'synthesis_bible_yearly',
+  LIFETIME: 'synthesis_bible_lifetime'
+};
 
-  const isNative = (window as any).Capacitor?.isNativePlatform();
+const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, theme }) => {
+  const t = theme || defaultTheme;
+  
+  const [isLoading, setIsLoading] = useState(false);
+  const [products, setProducts] = useState<ProductDetails[]>([]);
+  const [selectedPlan, setSelectedPlan] = useState<string>('MONTHLY');
+  const [error, setError] = useState<string | null>(null);
+  const userId = useAppStore.getState().currentUser?.uid || 'guest';
 
-  const features = [
-    'Unlimited highlights & notes',
-    'All 50+ reading plans',
-    'Verse image creator',
-    'Advanced search filters',
-    'Cross-device sync',
-    'Priority email support',
-    'Monthly prayer journal export',
-    'Custom reading plans',
-    'Modern Bible translations (NIV, ESV, NLT)',
-    'Ad-free experience',
-  ];
+  useEffect(() => {
+    if (isOpen && Capacitor.isNativePlatform()) {
+      loadProductDetails();
+    }
+  }, [isOpen]);
 
-  if (!isOpen) return null;
-
-  const showToast = (message: string, bgColor: string) => {
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: ${bgColor}; color: white; padding: 10px 20px;
-      border-radius: 10px; z-index: 1000; font-size: 14px;
-      animation: fadeInUp 0.3s ease;
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  };
-
-  // In ProUpgradeModal.tsx, update the handleUpgrade function:
-
-  const handleUpgrade = async () => {
-    setProcessing(true);
-    setError('');
-
-    let currentUserId = userId;
-    let currentUserEmail = userEmail;
-
+  const loadProductDetails = async () => {
+    setIsLoading(true);
+    setError(null);
     try {
-      console.log('💰 Starting Paystack payment...');
+      await billingService.initialize(userId);
+      
+      const monthly = await billingService.getProductDetails(PRODUCT_IDS.MONTHLY, 'SUBS');
+      const yearly = await billingService.getProductDetails(PRODUCT_IDS.YEARLY, 'SUBS');
+      const lifetime = await billingService.getProductDetails(PRODUCT_IDS.LIFETIME, 'INAPP');
 
-      if (!currentUserId) {
-        const savedUser = localStorage.getItem('logos_user');
-        if (savedUser) {
-          const user = JSON.parse(savedUser);
-          currentUserId = user.uid;
-          currentUserEmail = user.email;
-        }
-      }
-
-      if (!currentUserEmail) {
-        throw new Error('Please sign in to upgrade to Pro');
-      }
-
-      localStorage.setItem('pendingProUserId', currentUserId || '');
-      localStorage.setItem('pendingProPlan', selectedPlan.id);
-
-      const API_URL = 'https://logos-daily-backend.onrender.com/api';
-
-      const response = await fetch(`${API_URL}/payments/initialize`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          email: currentUserEmail,
-          amount: selectedPlan.amount,
-          planId: selectedPlan.id,
-          userId: currentUserId,
-          isMobile: isNative,
-        }),
-      });
-
-      const data = await response.json();
-      console.log('Payment init response:', data);
-
-      if (!data.success) {
-        throw new Error(data.error || 'Payment initialization failed');
-      }
-
-      const paymentUrl = data.paymentUrl || data.authorization_url;
-
-      if (paymentUrl) {
-        // Check if running on native device
-        const isNative = (window as any).Capacitor?.isNativePlatform();
-        
-        if (isNative) {
-          // Open in external browser (not WebView)
-          console.log('📱 Opening in external browser:', paymentUrl);
-          window.open(paymentUrl, '_system');
-          
-          // Start polling for Pro status
-          setError('Complete payment in your browser, then return to the app.');
-          setProcessing(false);
-          
-          // Poll for Pro status
-          pollProStatus(currentUserId);
-        } else {
-          // Web - redirect normally
-          console.log('🔗 Redirecting to Paystack:', paymentUrl);
-          window.location.href = paymentUrl;
-        }
-      } else {
-        throw new Error('No payment URL received');
-      }
-
-    } catch (err: any) {
-      console.error('❌ Upgrade error:', err);
-      setError(err.message || 'Payment failed. Please try again.');
-      setProcessing(false);
+      const availableProducts = [monthly, yearly, lifetime].filter(p => p !== null) as ProductDetails[];
+      setProducts(availableProducts);
+    } catch (err) {
+      setError('Failed to load products. Please check your connection.');
+      console.error('Error loading products:', err);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  // Poll for Pro status after mobile payment
-  const pollProStatus = (userId: string) => {
-    let attempts = 0;
-    const maxAttempts = 30; // Poll for 2.5 minutes
-    
-    const interval = setInterval(async () => {
-      attempts++;
-      console.log(`🔍 Polling Pro status (${attempts}/${maxAttempts})...`);
-      
-      try {
-        const response = await fetch(
-          `https://logos-daily-backend.onrender.com/api/payments/pro-status/${userId}`
-        );
-        const data = await response.json();
+  const handlePurchase = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const productId = PRODUCT_IDS[selectedPlan as keyof typeof PRODUCT_IDS];
+      const type = selectedPlan === 'LIFETIME' ? 'INAPP' : 'SUBS';
+      const result = await billingService.purchaseProduct(productId, type);
+
+      if (result.success && result.purchaseToken) {
+        const userId = useAppStore.getState().currentUser?.uid || 'guest';
         
-        if (data.isPro) {
-          clearInterval(interval);
-          console.log('✅ Pro confirmed!');
-          
-          localStorage.setItem(`isPro_${userId}`, 'true');
+        const verifyResponse = await fetch(
+          'https://logos-daily-backend.onrender.com/api/google-play/verify-purchase',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              purchaseToken: result.purchaseToken,
+              productId: productId,
+              userId: userId
+            })
+          }
+        );
+        
+        const verifyData = await verifyResponse.json();
+        
+        if (verifyData.success && verifyData.isPro) {
+          useAppStore.setState({ isPro: true });
           localStorage.setItem('logos_daily_pro', 'true');
-          localStorage.removeItem('pendingProUserId');
-          localStorage.removeItem('pendingProPlan');
-          
-          setProStatus(true);
-          onSuccess?.();
-          showToast('🎉 Welcome to Logos Pro!', '#4CAF50');
+          if (userId !== 'guest') {
+            localStorage.setItem(`isPro_${userId}`, 'true');
+          }
+          alert('🎉 Welcome to Pro! Your subscription is active.');
           onClose();
+        } else {
+          setError('Purchase verification failed. Please contact support.');
         }
-      } catch (e) {
-        console.error('Poll error:', e);
+      } else {
+        if (result.error !== 'User cancelled purchase') {
+          setError(result.error || 'Purchase failed. Please try again.');
+        }
       }
-      
-      if (attempts >= maxAttempts) {
-        clearInterval(interval);
-        setError('Payment may have succeeded. Check Pro status in Settings.');
-        setProcessing(false);
-      }
-    }, 5000);
+    } catch (err: any) {
+      setError(err.message || 'Failed to complete purchase');
+      console.error('Purchase error:', err);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
+  const handleRestorePurchases = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const productIds = await billingService.restorePurchases();
+      if (productIds.length > 0) {
+        const userId = useAppStore.getState().currentUser?.uid || 'guest';
+        
+        for (const productId of productIds) {
+          const statusResponse = await fetch(
+            `https://logos-daily-backend.onrender.com/api/google-play/subscription-status/${userId}`
+          );
+          const statusData = await statusResponse.json();
+          
+          if (statusData.isPro) {
+            useAppStore.setState({ isPro: true });
+            localStorage.setItem('logos_daily_pro', 'true');
+            if (userId !== 'guest') {
+              localStorage.setItem(`isPro_${userId}`, 'true');
+            }
+            alert('✅ Your Pro subscription has been restored!');
+            onClose();
+            return;
+          }
+        }
+        alert('No active Pro subscription found.');
+      } else {
+        alert('No purchases to restore.');
+      }
+    } catch (err) {
+      setError('Failed to restore purchases. Please try again.');
+      console.error('Restore error:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  // Web fallback
+  if (!Capacitor.isNativePlatform()) {
+    return (
       <div
-        className="relative w-full max-w-3xl rounded-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
-        style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.7)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 9999,
+          padding: '20px'
+        }}
+        onClick={onClose}
       >
-        {/* Header */}
-        <div className="sticky top-0 flex items-center justify-between p-4 border-b" style={{ backgroundColor: theme.card, borderColor: theme.border }}>
-          <div className="flex items-center gap-2">
-            <Crown size={20} style={{ color: theme.accent }} />
-            <h2 className="text-lg font-bold" style={{ color: theme.text }}>Upgrade to Logos Pro</h2>
-          </div>
-          <button onClick={onClose} className="p-1 rounded-lg hover:opacity-80" style={{ color: theme.textMuted }}>
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6">
-          {/* Hero */}
-          <div className="text-center mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold mb-3" style={{ backgroundColor: `${theme.accent}20`, color: theme.accent }}>
-              <Zap size={12} />
-              Limited Time Offer
-            </div>
-            <h3 className="text-2xl font-bold mb-2" style={{ color: theme.text }}>Unlock the Full Bible Study Experience</h3>
-            <p className="text-sm" style={{ color: theme.textMuted }}>
-              Get unlimited access to all features and transform your daily devotion
-            </p>
-          </div>
-
-          {/* Error Message */}
-          {error && (
-            <div className="mb-4 p-3 rounded-lg text-sm flex items-center gap-2" style={{ backgroundColor: '#e5393520', color: '#e53935' }}>
-              <AlertCircle size={16} />
-              {error}
-            </div>
-          )}
-
-          {/* Plans */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-            {Object.values(PRO_PLANS).map((plan) => (
-              <button
-                key={plan.id}
-                onClick={() => setSelectedPlan(plan)}
-                className={`p-4 rounded-xl text-left transition-all ${
-                  selectedPlan.id === plan.id ? 'ring-2' : 'hover:opacity-80'
-                }`}
-                style={{
-                  backgroundColor: selectedPlan.id === plan.id ? `${theme.accent}15` : theme.surface,
-                  border: `1px solid ${selectedPlan.id === plan.id ? theme.accent : theme.border}`,
-                }}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="font-bold" style={{ color: theme.text }}>{plan.name}</span>
-                  {selectedPlan.id === plan.id && <Check size={16} style={{ color: theme.accent }} />}
-                </div>
-                <div className="mb-2">
-                  <span className="text-2xl font-bold" style={{ color: theme.text }}>{plan.amountNaira}</span>
-                  {plan.id !== 'lifetime' && <span className="text-xs" style={{ color: theme.textMuted }}>/month</span>}
-                </div>
-                <p className="text-xs" style={{ color: theme.textMuted }}>
-                  {plan.id === 'lifetime' ? 'One-time payment' : `Billed ${plan.id === 'monthly' ? 'monthly' : 'annually'}`}
-                </p>
-                {plan.id === 'yearly' && (
-                  <p className="text-xs mt-2" style={{ color: '#4CAF50' }}>Save 17%</p>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Features */}
-          <div className="mb-6 p-4 rounded-xl" style={{ backgroundColor: theme.surface }}>
-            <h4 className="font-bold text-sm mb-3 flex items-center gap-2" style={{ color: theme.text }}>
-              <Star size={14} style={{ color: theme.accent }} />
-              Everything in Logos Pro:
-            </h4>
-            <div className="grid grid-cols-2 md:grid-cols-2 gap-2">
-              {features.map((feature, i) => (
-                <div key={i} className="flex items-center gap-2">
-                  <Check size={12} style={{ color: '#4CAF50' }} />
-                  <span className="text-xs" style={{ color: theme.textMuted }}>{feature}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Payment Button */}
-          <button
-            onClick={handleUpgrade}
-            disabled={processing}
-            className="w-full py-3 rounded-xl font-bold text-white transition-all hover:opacity-80 disabled:opacity-50 flex items-center justify-center gap-2"
-            style={{ background: `linear-gradient(135deg, ${theme.accent}, ${theme.accent}CC)` }}
-          >
-            {processing ? (
-              <>
-                <Loader2 size={18} className="animate-spin" />
-                Processing...
-              </>
-            ) : (
-              <>
-                <CreditCard size={18} />
-                Pay {selectedPlan.amountNaira} with Paystack
-              </>
-            )}
-          </button>
-
-          {/* Guarantee */}
-          <div className="flex items-center justify-center gap-2 mt-4 text-xs" style={{ color: theme.textFaint }}>
-            <Shield size={12} />
-            <span>Secure payment powered by Paystack</span>
-          </div>
-          <p className="text-center text-xs mt-2" style={{ color: theme.textFaint }}>
-            30-day money-back guarantee · Cancel anytime
+        <div
+          style={{
+            backgroundColor: t.card,
+            borderRadius: '16px',
+            padding: '30px',
+            maxWidth: '400px',
+            width: '100%'
+          }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <h2 style={{ color: t.text, textAlign: 'center' }}>📱 Mobile App Required</h2>
+          <p style={{ color: t.textMuted, textAlign: 'center' }}>
+            In-app purchases are only available on the mobile app.
+            Please download the app from Google Play Store to upgrade.
           </p>
+          <button
+            onClick={onClose}
+            style={{
+              width: '100%',
+              padding: '14px',
+              backgroundColor: t.accent,
+              color: 'white',
+              border: 'none',
+              borderRadius: '10px',
+              fontSize: '16px',
+              cursor: 'pointer',
+              marginTop: '20px'
+            }}
+          >
+            Close
+          </button>
         </div>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0,0,0,0.7)',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 9999,
+        padding: '20px'
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          backgroundColor: t.card,
+          borderRadius: '16px',
+          padding: '30px',
+          maxWidth: '400px',
+          width: '100%',
+          maxHeight: '90vh',
+          overflow: 'auto'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 style={{ color: t.text, textAlign: 'center' }}>✨ Upgrade to Pro</h2>
+        <p style={{ color: t.textMuted, textAlign: 'center' }}>
+          Get unlimited access to all features
+        </p>
+
+        {error && (
+          <div style={{
+            backgroundColor: '#e5393515',
+            color: '#e53935',
+            padding: '10px',
+            borderRadius: '8px',
+            margin: '10px 0',
+            fontSize: '14px'
+          }}>
+            {error}
+          </div>
+        )}
+
+        {isLoading && !products.length ? (
+          <div style={{ textAlign: 'center', padding: '20px', color: t.textMuted }}>
+            Loading products...
+          </div>
+        ) : (
+          <>
+            <div style={{ margin: '20px 0' }}>
+              {products.map((product) => {
+                const planKey = Object.keys(PRODUCT_IDS).find(
+                  key => PRODUCT_IDS[key as keyof typeof PRODUCT_IDS] === product.productId
+                );
+                
+                return (
+                  <div
+                    key={product.productId}
+                    style={{
+                      padding: '15px',
+                      margin: '10px 0',
+                      border: selectedPlan === planKey ? `2px solid ${t.accent}` : `1px solid ${t.border}`,
+                      borderRadius: '10px',
+                      backgroundColor: selectedPlan === planKey ? 'rgba(72, 138, 255, 0.1)' : 'transparent',
+                      cursor: 'pointer'
+                    }}
+                    onClick={() => setSelectedPlan(planKey || 'MONTHLY')}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <h4 style={{ color: t.text, margin: 0 }}>{product.title}</h4>
+                        <p style={{ color: t.textMuted, margin: '5px 0 0', fontSize: '14px' }}>
+                          {product.description}
+                        </p>
+                      </div>
+                      <span style={{
+                        color: t.accent,
+                        fontSize: '18px',
+                        fontWeight: 'bold'
+                      }}>
+                        {product.price}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={handlePurchase}
+              disabled={isLoading}
+              style={{
+                width: '100%',
+                padding: '14px',
+                backgroundColor: t.accent,
+                color: 'white',
+                border: 'none',
+                borderRadius: '10px',
+                fontSize: '16px',
+                fontWeight: 'bold',
+                cursor: isLoading ? 'not-allowed' : 'pointer',
+                opacity: isLoading ? 0.6 : 1
+              }}
+            >
+              {isLoading ? 'Processing...' : 'Subscribe Now'}
+            </button>
+
+            <button
+              onClick={handleRestorePurchases}
+              disabled={isLoading}
+              style={{
+                width: '100%',
+                padding: '10px',
+                backgroundColor: 'transparent',
+                color: t.textMuted,
+                border: 'none',
+                fontSize: '14px',
+                cursor: 'pointer',
+                marginTop: '10px'
+              }}
+            >
+              Restore Purchases
+            </button>
+
+            <button
+              onClick={onClose}
+              style={{
+                width: '100%',
+                padding: '10px',
+                backgroundColor: 'transparent',
+                color: t.textMuted,
+                border: 'none',
+                fontSize: '14px',
+                cursor: 'pointer',
+                marginTop: '5px'
+              }}
+            >
+              Close
+            </button>
+          </>
+        )}
       </div>
     </div>
   );

@@ -5,7 +5,6 @@
  * Implements caching, retry logic, and offline support.
  */
 import { CapacitorHttp } from '@capacitor/core';
-
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
@@ -243,8 +242,8 @@ class BibleApiClient {
     this.cache.clear();
     console.log('🧹 API cache cleared');
   }
-
-   // Check if API is reachable - also use CapacitorHttp  
+  
+  // Check if API is reachable - also use CapacitorHttp  
   async healthCheck(): Promise<boolean> {
     try {
       const response = await CapacitorHttp.get({

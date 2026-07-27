@@ -33,11 +33,13 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
   const [hour, setHour] = useState(8);
   const [minute, setMinute] = useState(0);
   const [error, setError] = useState('');
-  const [pendingSave, setPendingSave] = useState(false); // Track if we need to save after settings
+  const [pendingSave, setPendingSave] = useState(false);
 
   // Re-check permissions when app resumes
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
+
+    let listener: any = null;
 
     const handleResume = async () => {
       await checkStatus();
@@ -48,12 +50,20 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
       }
     };
 
-    App.addListener('appStateChange', ({ isActive }) => {
-      if (isActive) handleResume();
-    });
+    // 🔥 FIXED: Use a specific listener and store reference for cleanup
+    const setupListener = async () => {
+      listener = await App.addListener('appStateChange', ({ isActive }) => {
+        if (isActive) handleResume();
+      });
+    };
 
+    setupListener();
+
+    // 🔥 FIXED: Only remove this specific listener, not all
     return () => {
-      App.removeAllListeners();
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
     };
   }, [pendingSave, hour, minute]);
 
@@ -74,6 +84,7 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
     }
   };
 
+  // In ReminderToggle.tsx - Update handleSaveTime
   const handleSaveTime = async () => {
     setError('');
     try {
@@ -81,23 +92,25 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
       setShowTimePicker(false);
       setPendingSave(false);
       
+      // Show success toast
       const toast = document.createElement('div');
-      toast.textContent = `Reminder set for ${hour}:${String(minute).padStart(2, '0')}`;
+      toast.textContent = `✅ Reminder set for ${hour}:${String(minute).padStart(2, '0')}`;
       toast.style.cssText = `
         position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
         background: #4CAF50; color: white; padding: 10px 20px;
         border-radius: 10px; z-index: 1000; font-size: 14px;
+        animation: fadeIn 0.3s;
       `;
       document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 2000);
+      setTimeout(() => toast.remove(), 3000);
       
     } catch (e: any) {
       if (e.message === 'EXACT_ALARM_PERMISSION_NEEDED') {
         setError('Android requires you to enable exact alarms manually');
-        setPendingSave(true); // Remember to save when user returns
+        setPendingSave(true);
         setTimeout(() => requestExactAlarm(), 500);
       } else {
-        setError(e.message);
+        setError(e.message || 'Failed to set reminder');
       }
     }
   };
@@ -106,12 +119,12 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
     <div className="p-4 rounded-xl" style={{ backgroundColor: t.card }}>
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          {reminderTime? <Bell size={20} color={t.accent} /> : <BellOff size={20} color={t.textMuted} />}
+          {reminderTime ? <Bell size={20} color={t.accent} /> : <BellOff size={20} color={t.textMuted} />}
           <div>
             <p style={{ color: t.text }}>Daily Reminder</p>
             <p className="text-xs" style={{ color: t.textMuted }}>
               {reminderTime
-               ? `Every day at ${reminderTime.hour}:${String(reminderTime.minute).padStart(2, '0')}`
+                ? `Every day at ${reminderTime.hour}:${String(reminderTime.minute).padStart(2, '0')}`
                 : 'Off'}
             </p>
           </div>
@@ -120,11 +133,11 @@ export const ReminderToggle: React.FC<{ theme?: any }> = ({ theme }) => {
           onClick={handleToggle}
           className="px-4 py-2 rounded-lg text-sm"
           style={{
-            backgroundColor: reminderTime? t.accent : t.surface,
-            color: reminderTime? 'white' : t.text
+            backgroundColor: reminderTime ? t.accent : t.surface,
+            color: reminderTime ? 'white' : t.text
           }}
         >
-          {reminderTime? 'Disable' : 'Enable'}
+          {reminderTime ? 'Disable' : 'Enable'}
         </button>
       </div>
 

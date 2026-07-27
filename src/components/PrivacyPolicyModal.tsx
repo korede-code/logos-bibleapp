@@ -33,12 +33,12 @@ const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onClose
     {
       title: 'Third-Party Services',
       icon: <Globe size={18} />,
-      content: 'We use Firebase (authentication), Paystack (payments), and Crashlytics (crash reporting). We do not sell or share your data with marketers.'
+      content: 'We use Firebase (authentication), and Crashlytics (crash reporting). We do not sell or share your data with marketers.'
     },
     {
       title: 'Your Rights',
       icon: <CheckCircle size={18} />,
-      content: 'You can access, export, or delete your data anytime in Settings. Contact emmakorede21@gmail.com for requests.'
+      content: 'You can access, export, or delete your data anytime in Settings. Contact synthesisbible@gmail.com for requests.'
     }
   ];
 
@@ -99,7 +99,7 @@ const PrivacyPolicyModal: React.FC<PrivacyPolicyModalProps> = ({ isOpen, onClose
               <h3 className="font-bold text-sm" style={{ color: theme.text }}>Contact Us</h3>
             </div>
             <p className="text-xs" style={{ color: theme.textMuted }}>
-              Privacy questions? Email us at <span style={{ color: theme.accent }}>emmakorede21@gmail.com</span>
+              Privacy questions? Email us at <span style={{ color: theme.accent }}>synthesisbible@gmail.com</span>
             </p>
           </div>
         </div>

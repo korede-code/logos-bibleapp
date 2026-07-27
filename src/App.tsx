@@ -1,7 +1,7 @@
 // src/App.tsx
 import React, { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { App } from '@capacitor/app'; // 🔥 MAKE SURE THIS IS IMPORTED
+import { App } from '@capacitor/app';
 import { useAppStore } from './store/appStore';
 import { onAuthChange } from './config/firebase';
 import HomeScreen from './components/HomeScreen';
@@ -9,8 +9,6 @@ import ReaderScreen from './components/ReaderScreen';
 import SearchScreen from './components/SearchScreen';
 import ReadingPlansScreen from './components/ReadingPlansScreen';
 import NotesScreen from './components/NotesScreen';
-import PaymentSuccess from './components/PaymentSuccess';
-import PaymentCallback from './components/PaymentCallback';
 import PrayerScreen from './components/PrayerScreen';
 import ProgressScreen from './components/ProgressScreen';
 import BookmarksScreen from './components/BookmarksScreen';
@@ -38,8 +36,6 @@ const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
   bookmarks: BookmarksScreen,
   groups: GroupsScreen,
   settings: SettingsScreen,
-  'payment-success': PaymentSuccess,
-  'payment-callback': PaymentCallback,  // 🔥 ADDED
   highlights: HighlightsScreen,
 };
 
@@ -47,8 +43,7 @@ const App: React.FC = () => {
   const { currentScreen, readerSettings, setCurrentUser, setProStatus, navigate } = useAppStore();
   const theme = getTheme(readerSettings.theme);
 
-  // 🔥 SINGLE useEffect for Capacitor listeners
-  // src/App.tsx - Update the deep link handler
+  // 🔥 Capacitor listeners 
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       console.log('🌐 Running on web - skipping native listeners');
@@ -62,49 +57,10 @@ const App: React.FC = () => {
 
     console.log('📱 Registering Capacitor listeners');
 
+    // ✅ Keep only necessary listeners for future use
     const urlHandler = async (data: { url: string }) => {
       console.log('🔗 Deep link opened:', data.url);
-    
-      try {
-        const url = new URL(data.url);
-        const reference = url.searchParams.get('reference');
-      
-        if (reference) {
-          console.log('💰 Payment reference found:', reference);
-        
-        // Navigate to payment callback
-          navigate('payment-callback');
-        
-        // Verify payment
-          console.log('🔍 Verifying payment via deep link...');
-          const response = await fetch(
-            `https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`
-          );
-          const result = await response.json();
-        
-          console.log('Verification result:', result);
-        
-          if (result.success && result.verified) {
-            const userId = localStorage.getItem('pendingProUserId');
-            console.log('📝 User ID for Pro activation:', userId);
-
-            if (userId) {
-              localStorage.setItem(`isPro_${userId}`, 'true');
-              localStorage.setItem('logos_daily_pro', 'true');
-              localStorage.removeItem('pendingProUserId');
-              localStorage.removeItem('pendingProPlan');
-              setProStatus(true);
-              console.log('✅ Pro status activated!');
-            } else {
-              console.warn('⚠️ No pendingProUserId found');
-            }
-          } else {
-            console.error('❌ Verification failed:', result);
-          }
-        }
-      } catch (error) {
-        console.error('❌ Error handling deep link:', error);
-      }
+      // Handle any deep links if needed (e.g., Google Play purchase verification)
     };
 
     const urlListener = App.addListener('appUrlOpen', urlHandler);
@@ -116,39 +72,6 @@ const App: React.FC = () => {
       }
     };
   }, [navigate, setProStatus]);
-
-  // 🔥 SINGLE useEffect for payment callback detection (web)
- /*
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const reference = params.get('reference') || params.get('trxref');
-    
-    if (reference && reference.startsWith('LOGOS_')) {
-      console.log('🔍 Payment callback detected:', reference);
-      
-      // Navigate to payment callback screen
-      navigate('payment-callback');
-      
-      // Verify payment
-      fetch(`https://logos-daily-backend.onrender.com/api/payments/verify/${reference}`)
-        .then(r => r.json())
-        .then(data => {
-          console.log('Verification result:', data);
-          if (data.success && data.verified) {
-            const userId = localStorage.getItem('pendingProUserId');
-            if (userId) {
-              localStorage.setItem(`isPro_${userId}`, 'true');
-              localStorage.setItem('logos_daily_pro', 'true');
-              localStorage.removeItem('pendingProUserId');
-              localStorage.removeItem('pendingProPlan');
-              setProStatus(true);
-            }
-          }
-        })
-        .catch(console.error);
-    }
-  }, [navigate, setProStatus]);
- */
 
   // 🔥 Auth listener
   useEffect(() => {
@@ -171,7 +94,6 @@ const App: React.FC = () => {
           console.log('✅ Pro set from localStorage');
         }
          
-        // Then check backend
         try {
           console.log('🔍 Checking backend Pro status for:', user.uid);
           const controller = new AbortController();

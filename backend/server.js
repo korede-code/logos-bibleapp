@@ -3,11 +3,9 @@ const express = require('express');
 const fs = require('fs');
 const path = require('path');
 const app = express();
-//const { db } = require('./config/firebase-admin');
-const axios = require('axios');
+const { google } = require('googleapis');
 
 const singleChapterBooks = require('./data/single-chapter-books.json');
-
 
 // Try to load Firebase, but continue if it fails
 let db = null;
@@ -117,117 +115,142 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// ============ PAYMENT ROUTES ============
-const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
+// ============ GOOGLE PLAY BILLING ============
 
-// Initialize payment
-app.post('/api/payments/initialize', async (req, res) => {
+// Initialize Google Play Developer API
+let androidPublisher = null;
+
+function initGooglePlayAPI() {
+  if (androidPublisher) return androidPublisher;
+  
   try {
-    const { email, amount, planId, userId, isMobile } = req.body;
-    const reference = 'LOGOS_' + Date.now() + '_' + Math.random().toString(36).substring(7);
-
-    const callbackUrl = `https://logos-daily.web.app/payment-success?reference=${reference}`;
-
-    console.log('💰 Payment init:', { email, amount, planId, userId, reference });
-
-    if (!process.env.PAYSTACK_SECRET) {
-      return res.status(500).json({ success: false, error: 'Payment service not configured' });
-    }
-
-    const response = await axios.post(
-      'https://api.paystack.co/transaction/initialize',
-      {
-        email: email,
-        amount: Math.round(amount * 100),
-        currency: 'NGN',
-        reference: reference,
-        callback_url: callbackUrl,
-        metadata: { userId, plan: planId }
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    if (response.data.status) {
-      res.json({
-        success: true,
-        paymentUrl: response.data.data.authorization_url,
-        reference: reference
-      });
-    } else {
-      res.status(400).json({ success: false, error: response.data.message });
-    }
-  } catch (error) {
-    console.error('Payment init error:', error);
-    res.status(500).json({ success: false, error: error.message });
-  }
-});
-
-// Verify payment
-app.get('/api/payments/verify/:reference', async (req, res) => {
-  const { reference } = req.params;
-  console.log('🔍 Verifying payment:', reference);
-
-  if (!process.env.PAYSTACK_SECRET) {
-    return res.json({ success: false, verified: false, message: 'Payment service not configured' });
-  }
-
-  try {
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
-    );
-
-    const isSuccessful = response.data.status && response.data.data.status === 'success';
+    const auth = new google.auth.JWT({
+      email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+      key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      scopes: ['https://www.googleapis.com/auth/androidpublisher'],
+    });
     
-    if (!isSuccessful) {
-      console.warn('⚠️ Payment not successful');
-      return res.json({ success: false, verified: false });
+    androidPublisher = google.androidpublisher({
+      version: 'v3',
+      auth: auth,
+    });
+    
+    console.log('✅ Google Play API initialized');
+    return androidPublisher;
+  } catch (error) {
+    console.error('❌ Failed to initialize Google Play API:', error);
+    return null;
+  }
+}
+
+// Endpoint to verify Google Play purchase
+app.post('/api/google-play/verify-purchase', async (req, res) => {
+  try {
+    const { purchaseToken, productId, userId } = req.body;
+    
+    if (!purchaseToken || !productId || !userId) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Missing required fields' 
+      });
     }
-
-    const userId = response.data.data.metadata?.userId;
-    console.log('✅ Payment verified! userId:', userId);
-
-    if (userId) {
+    
+    const api = initGooglePlayAPI();
+    if (!api) {
+      return res.status(500).json({ 
+        success: false, 
+        error: 'Google Play API not initialized' 
+      });
+    }
+    
+    // Get purchase details from Google Play
+    const response = await api.purchases.subscriptions.get({
+      packageName: 'com.logosdaily.app',
+      subscriptionId: productId,
+      token: purchaseToken,
+    });
+    
+    const purchase = response.data;
+    const isValid = purchase.paymentState === 1; // 1 = PAID
+    
+    if (isValid) {
+      // Update user's Pro status
       const userData = {
         isPro: true,
         proSince: new Date().toISOString(),
-        lastPaymentRef: reference,
-        email: response.data.data.customer?.email,
-        amount: response.data.data.amount,
-        plan: response.data.data.metadata?.plan,
-        verifiedAt: new Date().toISOString(),
+        productId: productId,
+        purchaseToken: purchaseToken,
+        expiryTime: purchase.expiryTimeMillis,
         updatedAt: new Date().toISOString()
       };
       
       await saveUserData(userId, userData);
-      console.log('✅ Pro status updated for user:', userId);
+      console.log(`✅ Pro activated for ${userId} via Google Play`);
+      
+      res.json({
+        success: true,
+        isPro: true,
+        userId: userId,
+        expiryTime: purchase.expiryTimeMillis
+      });
     } else {
-      console.warn('⚠️ No userId in metadata - cannot update Pro status');
+      console.warn(`⚠️ Purchase not valid for ${userId}`);
+      res.json({
+        success: false,
+        isPro: false,
+        message: 'Purchase not valid'
+      });
     }
-
-    res.json({ 
-      success: true, 
-      verified: true, 
-      userId: userId,
-      data: response.data.data
-    });
-
   } catch (error) {
-    console.error('❌ Verification error:', error.response?.data || error.message);
-    res.status(500).json({ 
-      success: false, 
-      verified: false,
-      error: error.response?.data?.message || error.message || 'Verification failed' 
+    console.error('❌ Verification error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to verify purchase'
     });
   }
 });
 
-// Check Pro status
+// Endpoint to check subscription status
+app.get('/api/google-play/subscription-status/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const userData = await getUserData(userId);
+    
+    if (userData && userData.isPro) {
+      // Check if subscription expired
+      if (userData.expiryTime) {
+        const now = Date.now();
+        const expiry = parseInt(userData.expiryTime);
+        if (expiry < now) {
+          // Subscription expired - update status
+          const updatedData = { ...userData, isPro: false };
+          await saveUserData(userId, updatedData);
+          return res.json({ 
+            success: true, 
+            isPro: false, 
+            message: 'Subscription expired' 
+          });
+        }
+      }
+      
+      return res.json({ 
+        success: true, 
+        isPro: true,
+        data: userData
+      });
+    }
+    
+    res.json({ success: true, isPro: false });
+  } catch (error) {
+    console.error('❌ Subscription status error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Check Pro status (unified endpoint)
 app.get('/api/payments/pro-status/:userId', async (req, res) => {
   const { userId } = req.params;
   console.log('🔍 Checking Pro status for userId:', userId);
@@ -252,93 +275,16 @@ app.get('/api/payments/pro-status/:userId', async (req, res) => {
   }
 });
 
-// server.js - Add this test endpoint
-app.get('/api/test-verify/:reference', async (req, res) => {
-  const { reference } = req.params;
-  console.log('🧪 Manual verification for:', reference);
-
-  console.log('🔍🔍🔍 VERIFICATION ENDPOINT CALLED 🔍🔍🔍');
-  console.log('🔍 Reference:', reference);
-  console.log('🔍 Full URL:', req.originalUrl);
-  console.log('🔍 Headers:', req.headers);
-  
-  try {
-    const response = await axios.get(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      { headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET}` } }
-    );
-    
-    console.log('📦 Paystack response:', JSON.stringify(response.data, null, 2));
-    
-    if (response.data.status && response.data.data.status === 'success') {
-      const userId = response.data.data.metadata?.userId;
-      console.log('✅ Payment verified! userId:', userId);
-      
-      if (userId) {
-        const userData = {
-          isPro: true,
-          proSince: new Date().toISOString(),
-          lastPaymentRef: reference,
-          email: response.data.data.customer?.email,
-          amount: response.data.data.amount,
-          plan: response.data.data.metadata?.plan,
-          verifiedAt: new Date().toISOString()
-        };
-        
-        await saveUserData(userId, userData);
-        console.log('✅ Pro status saved for user:', userId);
-      }
-      
-      res.json({ 
-        success: true, 
-        verified: true, 
-        userId: userId,
-        data: response.data.data
-      });
-    } else {
-      res.json({ success: false, verified: false });
-    }
-  } catch (error) {
-    console.error('❌ Error:', error);
-    res.status(500).json({ success: false, error: error.message });
+// Endpoint to test Google Play API connection
+app.get('/api/google-play/test', async (req, res) => {
+  const api = initGooglePlayAPI();
+  if (api) {
+    res.json({ success: true, message: 'Google Play API connected' });
+  } else {
+    res.status(500).json({ success: false, error: 'Google Play API failed' });
   }
 });
 
-// Webhook endpoint
-app.post('/api/payments/webhook', async (req, res) => {
-  const event = req.body;
-  console.log('📨 Webhook received:', JSON.stringify(event, null, 2));
-
-  if (event.event === 'charge.success') {
-    const { reference, metadata, customer } = event.data;
-    const userId = metadata?.userId;
-
-    console.log('💰 Payment successful!');
-    console.log('   Reference:', reference);
-    console.log('   User ID:', userId);
-
-    if (userId) {
-      const userData = {
-        isPro: true,
-        proSince: new Date().toISOString(),
-        lastPaymentRef: reference,
-        email: customer?.email,
-        amount: event.data.amount,
-        plan: metadata?.plan || 'unknown',
-        verifiedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        webhookReceived: true
-      };
-      
-      await saveUserData(userId, userData);
-      console.log('✅ Webhook: Pro status updated for user:', userId);
-    } else {
-      console.warn('⚠️ Webhook: No userId in metadata');
-    }
-  }
-
-  res.sendStatus(200);
-});
 
 // ============ SUPPORTED TRANSLATIONS ============
 app.get('/api/bible/translations', (req, res) => {

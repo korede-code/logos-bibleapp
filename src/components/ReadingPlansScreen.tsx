@@ -172,18 +172,151 @@ function generateMiraclesReadings() {
 }
 
 function generateSermonReadings() {
+  const readings = [
+    { day: 1, book: 'Matthew', chapter: 5, startVerse: 1, endVerse: 12, title: 'The Beatitudes (Matthew 5:1-12)' },
+    { day: 2, book: 'Matthew', chapter: 5, startVerse: 13, endVerse: 20, title: 'Salt and Light (Matthew 5:13-20)' },
+    { day: 3, book: 'Matthew', chapter: 5, startVerse: 21, endVerse: 32, title: 'Anger, Lust & Divorce (Matthew 5:21-32)' },
+    { day: 4, book: 'Matthew', chapter: 5, startVerse: 33, endVerse: 48, title: 'Oaths & Love for Enemies (Matthew 5:33-48)' },
+    { day: 5, book: 'Matthew', chapter: 6, startVerse: 1, endVerse: 18, title: 'Giving, Prayer & Fasting (Matthew 6:1-18)' },
+    { day: 6, book: 'Matthew', chapter: 6, startVerse: 19, endVerse: 34, title: 'Treasures & Do Not Worry (Matthew 6:19-34)' },
+    { day: 7, book: 'Matthew', chapter: 7, startVerse: 1, endVerse: 29, title: 'Judging & The Narrow Gate (Matthew 7:1-29)' },
+  ];
+  
+  return readings;
+}
+
+function generateFruitOfSpiritReadings() {
+  const readings = [
+    { day: 1, book: 'Galatians', chapter: 5, startVerse: 16, endVerse: 26, title: 'Walking by the Spirit' },
+    { day: 2, book: '1 Corinthians', chapter: 13, startVerse: 1, endVerse: 13, title: 'Love - The Greatest Gift' },
+    { day: 3, book: 'Philippians', chapter: 4, startVerse: 4, endVerse: 9, title: 'Joy & Peace in Christ' },
+    { day: 4, book: 'James', chapter: 1, startVerse: 1, endVerse: 12, title: 'Patience in Trials' },
+    { day: 5, book: 'Colossians', chapter: 3, startVerse: 12, endVerse: 17, title: 'Kindness & Goodness' },
+    { day: 6, book: 'Hebrews', chapter: 11, startVerse: 1, endVerse: 40, title: 'Faithfulness of the Heroes' },
+    { day: 7, book: 'Proverbs', chapter: 15, startVerse: 1, endVerse: 33, title: 'Gentleness & Wisdom' },
+    { day: 8, book: '2 Peter', chapter: 1, startVerse: 3, endVerse: 11, title: 'Self-Control & Growth' },
+    { day: 9, book: 'Romans', chapter: 12, startVerse: 1, endVerse: 21, title: 'Living Sacrifice & Love' },
+    { day: 10, book: '1 John', chapter: 4, startVerse: 7, endVerse: 21, title: 'Perfect Love Casts Out Fear' },
+  ];
+  return readings;
+}
+
+function generateProverbs31Readings() {
   const readings = [];
-  for (let i = 1; i <= 7; i++) {
+  for (let day = 1; day <= 31; day++) {
+    const proverbs = {
+      1: 'The Beginning of Knowledge',
+      2: 'The Value of Wisdom',
+      3: 'Trust in the Lord',
+      4: 'Security in Wisdom',
+      5: 'Warning Against Adultery',
+      6: 'Warnings Against Folly',
+      7: 'Warning Against the Adulteress',
+      8: 'The Excellence of Wisdom',
+      9: 'The Way of Wisdom',
+      10: 'Wise Sayings of Solomon',
+      11: 'Dishonest Scales',
+      12: 'The Righteous and the Wicked',
+      13: 'A Wise Son',
+      14: 'The Wise Woman',
+      15: 'A Soft Answer',
+      16: 'The Plans of the Heart',
+      17: 'Better a Dry Morsel',
+      18: 'The Name of the Lord',
+      19: 'Better is the Poor',
+      20: 'Wine is a Mocker',
+      21: 'The King\'s Heart',
+      22: 'A Good Name',
+      23: 'When You Sit to Eat',
+      24: 'Do Not Envy Evil Men',
+      25: 'Hezekiah\'s Proverbs',
+      26: 'Honor is Not Fitting for a Fool',
+      27: 'Do Not Boast About Tomorrow',
+      28: 'The Wicked Flee',
+      29: 'He Who is Often Rebuked',
+      30: 'The Wisdom of Agur',
+      31: 'The Virtuous Wife',
+    };
     readings.push({
-      day: i,
-      book: 'Matthew',
-      chapter: 5,
-      startVerse: (i - 1) * 8 + 1,
-      endVerse: Math.min(i * 8, 48),
-      title: `Beatitudes - Day ${i}`
+      day,
+      book: 'Proverbs',
+      chapter: day,
+      startVerse: 1,
+      endVerse: 999,
+      title: `Proverbs ${day}: ${proverbs[day] || 'Wisdom'}`,
     });
   }
   return readings;
+}
+
+function generateGospelOfJohnReadings() {
+  const readings = [];
+  for (let day = 1; day <= 21; day++) {
+    const chapter = day;
+    const titles: Record<number, string> = {
+      1: 'The Word Became Flesh',
+      2: 'Water to Wine & Temple Cleansing',
+      3: 'You Must Be Born Again',
+      4: 'The Samaritan Woman',
+      5: 'Healing at the Pool',
+      6: 'I Am the Bread of Life',
+      7: 'Rivers of Living Water',
+      8: 'I Am the Light of the World',
+      9: 'Healing the Blind Man',
+      10: 'The Good Shepherd',
+      11: 'Lazarus Raised from Death',
+      12: 'The Triumphal Entry',
+      13: 'Jesus Washes Feet',
+      14: 'I Am the Way',
+      15: 'The True Vine',
+      16: 'The Helper Will Come',
+      17: 'Jesus\' High Priestly Prayer',
+      18: 'Betrayal and Arrest',
+      19: 'The Crucifixion',
+      20: 'The Resurrection',
+      21: 'Breakfast by the Sea',
+    };
+    readings.push({
+      day,
+      book: 'John',
+      chapter,
+      startVerse: 1,
+      endVerse: 999,
+      title: titles[chapter] || `John ${chapter}`,
+    });
+  }
+  return readings;
+}
+
+function generateArmorOfGodReadings() {
+  return [
+    { day: 1, book: 'Ephesians', chapter: 6, startVerse: 10, endVerse: 18, title: 'The Full Armor of God' },
+    { day: 2, book: 'Isaiah', chapter: 59, startVerse: 1, endVerse: 21, title: 'The Armor of Righteousness' },
+    { day: 3, book: 'Romans', chapter: 13, startVerse: 11, endVerse: 14, title: 'Put On Christ' },
+    { day: 4, book: '2 Corinthians', chapter: 10, startVerse: 1, endVerse: 6, title: 'Spiritual Weapons' },
+    { day: 5, book: '1 Thessalonians', chapter: 5, startVerse: 1, endVerse: 11, title: 'Breastplate of Faith & Love' },
+    { day: 6, book: '1 Peter', chapter: 5, startVerse: 6, endVerse: 11, title: 'Stand Firm Against the Devil' },
+    { day: 7, book: 'James', chapter: 4, startVerse: 1, endVerse: 10, title: 'Submit to God, Resist the Devil' },
+  ];
+}
+
+function generatePsalmsOfComfortReadings() {
+  return [
+    { day: 1, book: 'Psalms', chapter: 23, startVerse: 1, endVerse: 6, title: 'The Lord is My Shepherd' },
+    { day: 2, book: 'Psalms', chapter: 27, startVerse: 1, endVerse: 14, title: 'The Lord is My Light' },
+    { day: 3, book: 'Psalms', chapter: 34, startVerse: 1, endVerse: 22, title: 'I Will Bless the Lord' },
+    { day: 4, book: 'Psalms', chapter: 46, startVerse: 1, endVerse: 11, title: 'God is Our Refuge' },
+    { day: 5, book: 'Psalms', chapter: 91, startVerse: 1, endVerse: 16, title: 'Under His Wings' },
+    { day: 6, book: 'Psalms', chapter: 103, startVerse: 1, endVerse: 22, title: 'Forget Not His Benefits' },
+    { day: 7, book: 'Psalms', chapter: 121, startVerse: 1, endVerse: 8, title: 'My Help Comes from the Lord' },
+    { day: 8, book: 'Psalms', chapter: 139, startVerse: 1, endVerse: 24, title: 'You Have Searched Me' },
+    { day: 9, book: 'Psalms', chapter: 37, startVerse: 1, endVerse: 11, title: 'Do Not Fret' },
+    { day: 10, book: 'Psalms', chapter: 42, startVerse: 1, endVerse: 11, title: 'Hope in God' },
+    { day: 11, book: 'Psalms', chapter: 55, startVerse: 16, endVerse: 23, title: 'Cast Your Burden on the Lord' },
+    { day: 12, book: 'Psalms', chapter: 62, startVerse: 1, endVerse: 12, title: 'My Soul Waits for God' },
+    { day: 13, book: 'Psalms', chapter: 116, startVerse: 1, endVerse: 19, title: 'I Love the Lord' },
+    { day: 14, book: 'Psalms', chapter: 138, startVerse: 1, endVerse: 8, title: 'The Lord Will Perfect' },
+  ];
 }
 
 // Reading Plans Data
@@ -247,6 +380,56 @@ const READING_PLANS_DATA = [
     category: 'Thematic',
     isPro: true,
     readings: generateSermonReadings()
+  },
+  {
+    id: 'fruit-of-spirit',
+    name: 'Fruit of the Spirit',
+    icon: '🍇',
+    duration: 10,
+    description: 'A 10-day study on the nine fruits of the Spirit and how to cultivate them.',
+    category: 'Thematic',
+    isPro: true,
+    readings: generateFruitOfSpiritReadings()
+  },
+  {
+    id: 'proverbs-month',
+    name: '31 Days of Proverbs',
+    icon: '📚',
+    duration: 31,
+    description: 'One chapter of Proverbs each day for a month of godly wisdom.',
+    category: 'Wisdom',
+    isPro: true,
+    readings: generateProverbs31Readings()
+  },
+  {
+    id: 'gospel-john',
+    name: 'Gospel of John in 21 Days',
+    icon: '🕊️',
+    duration: 21,
+    description: 'Journey through the Gospel of John, discovering Jesus as the Son of God.',
+    category: 'Gospels',
+    isPro: true,
+    readings: generateGospelOfJohnReadings()
+  },
+  {
+    id: 'armor-of-god',
+    name: 'Armor of God',
+    icon: '🛡️',
+    duration: 7,
+    description: 'Learn to stand firm with the full armor of God against spiritual warfare.',
+    category: 'Thematic',
+    isPro: true,
+    readings: generateArmorOfGodReadings()
+  },
+  {
+    id: 'psalms-comfort',
+    name: 'Psalms of Comfort',
+    icon: '🕯️',
+    duration: 14,
+    description: 'Find comfort and hope in 14 powerful Psalms for difficult times.',
+    category: 'Wisdom',
+    isPro: true,
+    readings: generatePsalmsOfComfortReadings()
   }
 ];
 

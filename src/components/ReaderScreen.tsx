@@ -603,6 +603,9 @@ const ReaderScreen: React.FC = () => {
     chapter: v.chapter,
     translation: v.translation
   })) : [];
+  
+  // ✅ ADD THIS DEBUG:
+  console.log('📖 displayVerses count:', displayVerses.length, 'first:', displayVerses[0], 'last:', displayVerses[displayVerses.length - 1]);
 
   const currentBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
   const totalChapters = currentBook?.chapters ?? 1;

@@ -37,3 +37,14 @@ Thumbs.db
 # Temporary files
 *.tmp
 .cache/
+
+# Keystore files
+*.jks
+*.keystore
+*.p12
+*.pfx
+# Build outputs
+**/build/
+**/release/
+*.aab
+*.apk

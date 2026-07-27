@@ -8,52 +8,110 @@ export const useNotifications = () => {
   const [hasPermission, setHasPermission] = useState(false);
   const [needsExactAlarm, setNeedsExactAlarm] = useState(false);
   const [reminderTime, setReminderTime] = useState<{hour: number, minute: number} | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   const checkStatus = async () => {
-    if (!Capacitor.isNativePlatform()) return;
+    if (!Capacitor.isNativePlatform()) {
+      setIsLoading(false);
+      return;
+    }
 
-    const perm = await LocalNotifications.checkPermissions();
-    setHasPermission(perm.display === 'granted');
+    try {
+      // Check permissions
+      const perm = await LocalNotifications.checkPermissions();
+      setHasPermission(perm.display === 'granted');
 
-    const exactOk = await NotificationService.checkExactAlarmPermission();
-    setNeedsExactAlarm(!exactOk);
+      // Check exact alarm permission
+      if (Capacitor.getPlatform() === 'android') {
+        const exactOk = await NotificationService.checkExactAlarmPermission();
+        setNeedsExactAlarm(!exactOk);
+      } else {
+        setNeedsExactAlarm(false);
+      }
 
-    const pending = await LocalNotifications.getPending();
-    if (pending.notifications.length > 0) {
-      const notif = pending.notifications[0];
-      const date = new Date(notif.schedule?.at!);
-      setReminderTime({ hour: date.getHours(), minute: date.getMinutes() });
-    } else {
-      setReminderTime(null);
+      // 🔥 Check if our reminder exists
+      const hasReminder = await NotificationService.hasReminder();
+      
+      if (hasReminder) {
+        const time = await NotificationService.getReminderTime();
+        if (time) {
+          setReminderTime(time);
+          console.log('📊 Reminder found:', time);
+        }
+      } else {
+        setReminderTime(null);
+        console.log('📊 No reminder found');
+      }
+      
+    } catch (error) {
+      console.error('❌ Error checking status:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   useEffect(() => {
     NotificationService.init();
     checkStatus();
+
+    let listener: any = null;
+    const setupListener = async () => {
+      if (Capacitor.isNativePlatform()) {
+        listener = await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            console.log('📱 App resumed, rechecking notifications');
+            checkStatus();
+          }
+        });
+      }
+    };
+    setupListener();
+
+    return () => {
+      if (listener && typeof listener.remove === 'function') {
+        listener.remove();
+      }
+    };
   }, []);
 
   const enableReminder = async (hour: number, minute: number) => {
-    await NotificationService.scheduleAlarm(hour, minute);
-    await checkStatus();
+    console.log('🔄 Enabling reminder:', { hour, minute });
+    try {
+      await NotificationService.scheduleAlarm(hour, minute);
+      await checkStatus();
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to enable reminder:', error);
+      throw error;
+    }
   };
 
   const disableReminder = async () => {
-    await NotificationService.cancelAlarm();
-    await checkStatus();
+    console.log('🔄 Disabling reminder');
+    try {
+      await NotificationService.cancelAlarm();
+      await checkStatus();
+      return true;
+    } catch (error) {
+      console.error('❌ Failed to disable reminder:', error);
+      throw error;
+    }
   };
 
   const requestPermission = async () => {
+    console.log('🔄 Requesting permission');
     const result = await LocalNotifications.requestPermissions();
     await checkStatus();
     return result.display === 'granted';
   };
 
   const requestExactAlarm = async () => {
+    console.log('🔄 Requesting exact alarm permission');
     await NotificationService.requestExactAlarmPermission();
   };
 
   const openBatterySettings = async () => {
+    console.log('🔄 Opening battery settings');
     await NotificationService.openBatterySettings();
   };
 
@@ -66,6 +124,7 @@ export const useNotifications = () => {
     requestExactAlarm,
     requestPermission,
     openBatterySettings,
-    checkStatus
+    checkStatus,
+    isLoading
   };
 };

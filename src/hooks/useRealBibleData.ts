@@ -125,6 +125,8 @@ export function useBibleChapter(
   const [progress, setProgress] = useState(0);
   const [fromCache, setFromCache] = useState(false);
 
+  console.log(`📖 useBibleChapter: Fetching ${book} ${chapter} (${translation})`);
+
   const fetchData = useCallback(async () => {
     console.log(`📖 Fetching ${book} ${chapter} (${translation})`);
     setIsLoading(true);

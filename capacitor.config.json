@@ -8,8 +8,6 @@
     "allowNavigation": [
       "logos-daily.web.app",
       "*.firebaseapp.com",
-      "*.paystack.com",
-      "*.paystack.co",
       "logos-daily-backend.onrender.com"
     ]
   },
@@ -29,6 +27,9 @@
     },
     "CapacitorCookies": {
       "enabled": true
+    },
+    "GooglePlay": {
+      "purchaseVerification": true
     }
   },
   "android": {
