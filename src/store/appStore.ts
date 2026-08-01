@@ -11,6 +11,7 @@
  */
 
 import { create } from 'zustand';
+import { format } from 'date-fns';
 import { DAILY_VERSES } from '../data/bibleData';
 import { bibleApi } from '../services/bibleApiClient';
 // Removed unused import: User from 'firebase/auth'
@@ -155,6 +156,13 @@ export interface TranslationOption {
   requiresPro: boolean;
 }
 
+// ✅ Verse Cache Interface
+export interface VerseCache {
+  verse: RealVerse | null;
+  timestamp: number | null;
+  date: string | null; // Track which day's verse
+}
+
 // CORS allowed origins for the backend
 export const ALLOWED_ORIGINS = [
   'http://localhost:5173',
@@ -228,6 +236,9 @@ export interface AppState {
   // Available Translations
   availableTranslations: TranslationOption[];
 
+  // ✅ Verse Cache
+  verseCache: VerseCache;
+
   // Actions — Navigation
   navigate: (screen: AppScreen) => void;
   goBack: () => void;
@@ -263,10 +274,10 @@ export interface AppState {
   recordReadingSession: (session: Omit<ReadingSession, 'date'>) => void;
 
   // Actions — Auth & Subscription
-  //setProStatus: (status: boolean) => void;
+  setProStatus: (status: boolean) => void;
   setCurrentUser: (user: any | null) => void;
   setUserData: (data: any) => void;
-  //logout: () => void;
+  logout: () => void;
 
   // Actions — UI
   selectVerse: (verseKey: string) => void;
@@ -278,6 +289,11 @@ export interface AppState {
   setCurrentPrayer: (prayer: Partial<PrayerEntry> | null) => void;
   setSearchQuery: (query: string) => void;
   addSearchHistory: (query: string) => void;
+
+  // ✅ Verse Cache Actions
+  setVerseCache: (verse: RealVerse) => void;
+  getCachedVerse: () => RealVerse | null;
+  isVerseCacheValid: () => boolean;
 
   // Bible API Actions
   fetchRealVerseOfTheDay: () => Promise<void>;
@@ -312,6 +328,22 @@ const loadPersistedState = () => {
 
 const persisted = loadPersistedState();
 
+// ✅ Load cached verse from localStorage
+const loadCachedVerse = (): VerseCache => {
+  try {
+    const verse = localStorage.getItem('votd_cached');
+    const timestamp = localStorage.getItem('votd_timestamp');
+    const date = localStorage.getItem('votd_date');
+    
+    return {
+      verse: verse ? JSON.parse(verse) : null,
+      timestamp: timestamp ? parseInt(timestamp) : null,
+      date: date || null
+    };
+  } catch {
+    return { verse: null, timestamp: null, date: null };
+  }
+};
 
 const restoreProStatus = () => {
   try {
@@ -350,26 +382,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     verse: 1,
     timestamp: Date.now(),
     translation: 'KJV',
-  },
-
-  setProStatus: (status) => {
-    set({ isPro: status });
-    const user = get().currentUser;
-    if (user?.uid) {
-      localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(status));
-    }
-    localStorage.setItem('logos_daily_pro', JSON.stringify(status));
-  },
-
-  logout: () => {
-    const user = get().currentUser;
-    if (user?.uid) {
-      localStorage.removeItem(`isPro_${user.uid}`);
-      localStorage.removeItem(`pro_data_${user.uid}`);
-    }
-    localStorage.removeItem('logos_daily_pro');
-    localStorage.removeItem('logos-daily-user');
-    set({ currentUser: null, userData: null, isPro: false });
   },
 
   readerSettings: persisted?.readerSettings ?? {
@@ -520,7 +532,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   searchQuery: '',
 
   // Bible API State
-  realVerseOfTheDay: null,
+  realVerseOfTheDay: loadCachedVerse().verse || null,
   currentChapterVerses: null,
   searchResults: [],
   isApiLoading: false,
@@ -529,6 +541,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   // Available Translations
   availableTranslations: [],
+
+  // ✅ Verse Cache
+  verseCache: loadCachedVerse(),
 
   // ─── Actions ───────────────────────────────────────────────────────────────
 
@@ -541,6 +556,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const prev = get().previousScreen;
     if (prev) set({ currentScreen: prev, previousScreen: null });
     else set({ currentScreen: 'home', previousScreen: null });
+  },
+
+  setProStatus: (status) => {
+    set({ isPro: status });
+    const user = get().currentUser;
+    if (user?.uid) {
+      localStorage.setItem(`isPro_${user.uid}`, JSON.stringify(status));
+    }
+    localStorage.setItem('logos_daily_pro', JSON.stringify(status));
+  },
+
+  logout: () => {
+    const user = get().currentUser;
+    if (user?.uid) {
+      localStorage.removeItem(`isPro_${user.uid}`);
+      localStorage.removeItem(`pro_data_${user.uid}`);
+    }
+    localStorage.removeItem('logos_daily_pro');
+    localStorage.removeItem('logos-daily-user');
+    set({ currentUser: null, userData: null, isPro: false });
   },
 
   setCurrentUser: (user) => set({ currentUser: user }),
@@ -723,8 +758,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
 
-  // ===== AUTH & SUBSCRIPTION ACTIONS ====
-
   // ===== UI ACTIONS =====
 
   selectVerse: (verseKey) => {
@@ -761,6 +794,51 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
+  // ===== ✅ VERSE CACHE ACTIONS =====
+
+  setVerseCache: (verse: RealVerse) => {
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const cacheData = {
+      verse,
+      timestamp: Date.now(),
+      date: today
+    };
+    
+    set({ verseCache: cacheData });
+    
+    // Also store in localStorage
+    localStorage.setItem('votd_cached', JSON.stringify(verse));
+    localStorage.setItem('votd_timestamp', String(Date.now()));
+    localStorage.setItem('votd_date', today);
+    
+    // Also update realVerseOfTheDay for immediate display
+    set({ realVerseOfTheDay: verse });
+  },
+
+  getCachedVerse: () => {
+    const cached = localStorage.getItem('votd_cached');
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch {
+        return null;
+      }
+    }
+    return null;
+  },
+
+  isVerseCacheValid: () => {
+    const timestamp = localStorage.getItem('votd_timestamp');
+    const date = localStorage.getItem('votd_date');
+    const today = format(new Date(), 'yyyy-MM-dd');
+    
+    if (!timestamp || !date) return false;
+    if (date !== today) return false; // Different day, get new verse
+    
+    const age = Date.now() - parseInt(timestamp);
+    return age < 3600000; // 1 hour cache
+  },
+
   // ===== BIBLE API ACTIONS =====
 
   setOnlineStatus: (status) => set({ isOnline: status }),
@@ -768,20 +846,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   clearApiError: () => set({ apiError: null }),
 
   fetchRealVerseOfTheDay: async () => {
-    set({ isApiLoading: true, apiError: null });
-    
-    const today = new Date().toISOString().split('T')[0];
-    const cached = localStorage.getItem(`votd_real_${today}`);
-    
-    if (cached) {
-      try {
-        const cachedVerse = JSON.parse(cached);
-        set({ realVerseOfTheDay: cachedVerse, isApiLoading: false });
+    // ✅ Check cache first
+    if (get().isVerseCacheValid()) {
+      const cached = get().getCachedVerse();
+      if (cached) {
+        console.log('📦 Using cached verse:', cached.reference);
+        set({ realVerseOfTheDay: cached, isApiLoading: false });
         return;
-      } catch (e) {
-        console.error('Failed to parse cached VOTD', e);
       }
     }
+
+    set({ isApiLoading: true, apiError: null });
     
     try {
       const response = await bibleApi.getVerseOfTheDay();
@@ -796,7 +871,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           verse: extractVerseFromReference(response.data.reference)
         };
         
-        localStorage.setItem(`votd_real_${today}`, JSON.stringify(verseData));
+        // ✅ Cache the verse
+        get().setVerseCache(verseData);
         
         set({ realVerseOfTheDay: verseData, isApiLoading: false });
       } else {
@@ -811,7 +887,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  // In appStore.ts - Check this function
   fetchChapter: async (translation: string, book: string, chapter: number) => {
     console.log(`📖 Store: fetchChapter called for ${translation}/${book}/${chapter}`);
     set({ isApiLoading: true, apiError: null });
@@ -838,7 +913,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.log(`📥 Store: API Response:`, response);
     
       if (response.success && response.data) {
-      // Log the data structure
         console.log(`📥 Store: Data structure:`, {
           type: typeof response.data,
           isArray: Array.isArray(response.data),
@@ -846,10 +920,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           firstItem: response.data[0]
         });
       
-        // Ensure we have valid verses
         let verses = response.data;
       
-        // If data is an array, use it directly
         if (Array.isArray(verses) && verses.length > 0) {
           const formattedVerses = verses.map((v: any) => ({
             reference: `${v.book} ${v.chapter}:${v.verse}`,

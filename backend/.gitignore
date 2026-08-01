@@ -48,3 +48,8 @@ Thumbs.db
 **/release/
 *.aab
 *.apk
+
+# .gitignore
+
+data/*.json
+!data/.gitkeep

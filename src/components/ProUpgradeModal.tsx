@@ -22,20 +22,27 @@ const defaultTheme = {
   success: '#4CAF50',
 };
 
+// ✅ Updated product IDs to match RevenueCat exactly
 const PRODUCT_IDS = {
-  MONTHLY: 'synthesis_bible_monthly',
-  YEARLY: 'synthesis_bible_yearly',
+  MONTHLY: 'synthesis_bible_monthly:monthly-base',
+  YEARLY: 'synthesis_bible_yearly:yearly-base',
   LIFETIME: 'synthesis_bible_lifetime'
 };
 
-const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, theme }) => {
+// ✅ Display names for the products
+const PRODUCT_DISPLAY_NAMES: Record<string, string> = {
+  'synthesis_bible_monthly:monthly-base': 'Monthly Pro',
+  'synthesis_bible_yearly:yearly-base': 'Yearly Pro',
+  'synthesis_bible_lifetime': 'Lifetime Pro'
+};
+
+export const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, theme }) => {
   const t = theme || defaultTheme;
   
   const [isLoading, setIsLoading] = useState(false);
   const [products, setProducts] = useState<ProductDetails[]>([]);
   const [selectedPlan, setSelectedPlan] = useState<string>('MONTHLY');
   const [error, setError] = useState<string | null>(null);
-  const userId = useAppStore.getState().currentUser?.uid || 'guest';
 
   useEffect(() => {
     if (isOpen && Capacitor.isNativePlatform()) {
@@ -47,17 +54,46 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
     setIsLoading(true);
     setError(null);
     try {
-      await billingService.initialize(userId);
-      
-      const monthly = await billingService.getProductDetails(PRODUCT_IDS.MONTHLY, 'SUBS');
-      const yearly = await billingService.getProductDetails(PRODUCT_IDS.YEARLY, 'SUBS');
-      const lifetime = await billingService.getProductDetails(PRODUCT_IDS.LIFETIME, 'INAPP');
+      console.log('🔍 Step 1: Initializing billing service...');
+      await billingService.initialize();
+      console.log('✅ Step 2: Billing service initialized');
 
-      const availableProducts = [monthly, yearly, lifetime].filter(p => p !== null) as ProductDetails[];
-      setProducts(availableProducts);
+      // ✅ Get all products with their exact IDs from RevenueCat
+      const productIds = [
+        PRODUCT_IDS.MONTHLY,
+        PRODUCT_IDS.YEARLY, 
+        PRODUCT_IDS.LIFETIME
+      ];
+      
+      const productPromises = productIds.map(id => billingService.getProductDetails(id));
+      const results = await Promise.all(productPromises);
+      
+      // ✅ Filter out null results and log what we found
+      const availableProducts = results.filter(p => p !== null) as ProductDetails[];
+      console.log('📦 Available products count:', availableProducts.length);
+      console.log('📦 Products found:', availableProducts.map(p => ({
+        id: p.productId,
+        title: p.title,
+        price: p.price
+      })));
+      
+      if (availableProducts.length === 0) {
+        console.error('❌ No products found! Check RevenueCat configuration.');
+        setError('No products available. Please check your configuration.');
+      } else {
+        console.log('✅ Products loaded successfully:', availableProducts);
+        setProducts(availableProducts);
+        
+        // ✅ Set first product as default
+        const firstProduct = availableProducts[0];
+        const planKey = Object.keys(PRODUCT_IDS).find(
+          key => PRODUCT_IDS[key as keyof typeof PRODUCT_IDS] === firstProduct.productId
+        );
+        setSelectedPlan(planKey || 'MONTHLY');
+      }
     } catch (err) {
+      console.error('❌ Error loading products:', err);
       setError('Failed to load products. Please check your connection.');
-      console.error('Error loading products:', err);
     } finally {
       setIsLoading(false);
     }
@@ -69,11 +105,15 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
 
     try {
       const productId = PRODUCT_IDS[selectedPlan as keyof typeof PRODUCT_IDS];
-      const type = selectedPlan === 'LIFETIME' ? 'INAPP' : 'SUBS';
-      const result = await billingService.purchaseProduct(productId, type);
+      console.log('💰 Purchasing product:', productId);
+      
+      const result = await billingService.purchaseProduct(productId, 'SUBS');
 
       if (result.success && result.purchaseToken) {
-        const userId = useAppStore.getState().currentUser?.uid || 'guest';
+        const userId = useAppStore.getState().currentUser?.uid || 
+                       localStorage.getItem('currentUserId') || 'guest';
+        
+        console.log('🔍 Verifying purchase with backend...');
         
         const verifyResponse = await fetch(
           'https://logos-daily-backend.onrender.com/api/google-play/verify-purchase',
@@ -83,12 +123,14 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
             body: JSON.stringify({
               purchaseToken: result.purchaseToken,
               productId: productId,
-              userId: userId
+              userId: userId,
+              customerInfo: result.customerInfo
             })
           }
         );
         
         const verifyData = await verifyResponse.json();
+        console.log('📦 Verification response:', verifyData);
         
         if (verifyData.success && verifyData.isPro) {
           useAppStore.setState({ isPro: true });
@@ -96,10 +138,27 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
           if (userId !== 'guest') {
             localStorage.setItem(`isPro_${userId}`, 'true');
           }
+          
+          // ✅ Trigger a refresh of the auth listener
+          window.dispatchEvent(new Event('focus'));
+          
           alert('🎉 Welcome to Pro! Your subscription is active.');
           onClose();
         } else {
-          setError('Purchase verification failed. Please contact support.');
+          // ✅ Fallback: Check directly with RevenueCat
+          console.log('⚠️ Backend verification failed, checking RevenueCat directly...');
+          const status = await billingService.checkPurchaseStatus();
+          if (status.isPurchased) {
+            useAppStore.setState({ isPro: true });
+            localStorage.setItem('logos_daily_pro', 'true');
+            if (userId !== 'guest') {
+              localStorage.setItem(`isPro_${userId}`, 'true');
+            }
+            alert('🎉 Welcome to Pro! Your subscription is active.');
+            onClose();
+          } else {
+            setError('Purchase verification failed. Please contact support or try restoring purchases.');
+          }
         }
       } else {
         if (result.error !== 'User cancelled purchase') {
@@ -120,27 +179,30 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
 
     try {
       const productIds = await billingService.restorePurchases();
+      console.log('🔍 Restored product IDs:', productIds);
+      
       if (productIds.length > 0) {
-        const userId = useAppStore.getState().currentUser?.uid || 'guest';
+        const userId = useAppStore.getState().currentUser?.uid || 
+                       localStorage.getItem('currentUserId') || 'guest';
         
-        for (const productId of productIds) {
-          const statusResponse = await fetch(
-            `https://logos-daily-backend.onrender.com/api/google-play/subscription-status/${userId}`
-          );
-          const statusData = await statusResponse.json();
-          
-          if (statusData.isPro) {
-            useAppStore.setState({ isPro: true });
-            localStorage.setItem('logos_daily_pro', 'true');
-            if (userId !== 'guest') {
-              localStorage.setItem(`isPro_${userId}`, 'true');
-            }
-            alert('✅ Your Pro subscription has been restored!');
-            onClose();
-            return;
+        // ✅ Check if any restored product gives Pro access
+        const status = await billingService.checkPurchaseStatus();
+        
+        if (status.isPurchased) {
+          useAppStore.setState({ isPro: true });
+          localStorage.setItem('logos_daily_pro', 'true');
+          if (userId !== 'guest') {
+            localStorage.setItem(`isPro_${userId}`, 'true');
           }
+          
+          // ✅ Sync with backend
+          await billingService.syncProStatusWithBackend(userId);
+          
+          alert('✅ Your Pro subscription has been restored!');
+          onClose();
+        } else {
+          alert('No active Pro subscription found.');
         }
-        alert('No active Pro subscription found.');
       } else {
         alert('No purchases to restore.');
       }
@@ -268,6 +330,9 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
                   key => PRODUCT_IDS[key as keyof typeof PRODUCT_IDS] === product.productId
                 );
                 
+                // ✅ Use display name from mapping if available
+                const displayName = PRODUCT_DISPLAY_NAMES[product.productId] || product.title;
+                
                 return (
                   <div
                     key={product.productId}
@@ -283,7 +348,7 @@ const ProUpgradeModal: React.FC<ProUpgradeModalProps> = ({ isOpen, onClose, them
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <h4 style={{ color: t.text, margin: 0 }}>{product.title}</h4>
+                        <h4 style={{ color: t.text, margin: 0 }}>{displayName}</h4>
                         <p style={{ color: t.textMuted, margin: '5px 0 0', fontSize: '14px' }}>
                           {product.description}
                         </p>

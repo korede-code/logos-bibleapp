@@ -1,6 +1,5 @@
 // src/services/GooglePlayBilling.ts
-
-import { Purchases, PurchasesConfiguration, PurchasesPackage } from '@revenuecat/purchases-capacitor';
+import { Purchases, PurchasesConfiguration } from '@revenuecat/purchases-capacitor';
 import { Capacitor } from '@capacitor/core';
 
 export interface ProductDetails {
@@ -14,8 +13,12 @@ export interface ProductDetails {
 export class GooglePlayBillingService {
   private static instance: GooglePlayBillingService;
   private initialized = false;
-  private apiKey = 'goog_mvVUVCfGLAyhHPCYOdpuHEGSxPw'; // 🔥 Replace with your actual API key
-  
+  private apiKey: string;
+
+  private constructor() {
+    // ✅ Load from environment with fallback
+    this.apiKey = process.env.VITE_REVENUECAT_API_KEY || 'goog_mvVUVCfGLAyhHPCYOdpuHEGSxPw';
+  }
 
   static getInstance(): GooglePlayBillingService {
     if (!GooglePlayBillingService.instance) {
@@ -33,12 +36,11 @@ export class GooglePlayBillingService {
     }
 
     try {
-      // Use a real user ID if available, otherwise fallback to a device-specific ID
       const appUserId = userId || this.getDeviceId();
       
       const config: PurchasesConfiguration = {
         apiKey: this.apiKey,
-        appUserID: appUserId,  // ✅ Use a unique ID instead of 'anonymous'
+        appUserID: appUserId,
       };
       await Purchases.configure(config);
       this.initialized = true;
@@ -49,9 +51,7 @@ export class GooglePlayBillingService {
     }
   }
 
-  // Helper to get a unique device ID
   private getDeviceId(): string {
-    // Use Firebase user ID if available, or generate a persistent UUID
     const storedId = localStorage.getItem('revenuecat_user_id');
     if (storedId) return storedId;
     
@@ -66,13 +66,40 @@ export class GooglePlayBillingService {
     }
 
     try {
+      console.log(`🔍 Fetching product: ${productId}`);
       const offerings = await Purchases.getOfferings();
-      const pkg = offerings.current?.availablePackages?.find(
+
+      // ✅ Log all available packages
+      console.log('📦 All available packages:', 
+        offerings.current?.availablePackages.map(p => ({
+          identifier: p.product.identifier,
+          title: p.product.title,
+          price: p.product.priceString
+        }))
+      );
+
+      const allPackages = offerings.current?.availablePackages || [];
+
+      // ✅ Try to find by exact match
+      let pkg = allPackages.find(
         p => p.product.identifier === productId
       );
       
-      if (pkg) {
+      // ✅ If not found, try to find by partial match
+      if (!pkg) {
+        console.log(`⚠️ Exact match not found for ${productId}, trying partial match...`);
+        pkg = allPackages.find(
+          p => p.product.identifier.includes(productId) || productId.includes(p.product.identifier)
+        );
+      }
+      
+        if (pkg) {
         const product = pkg.product;
+        console.log(`✅ Found product:`, {
+          id: product.identifier,
+          title: product.title,
+          price: product.priceString
+        });
         return {
           productId: product.identifier,
           title: product.title || 'Pro Subscription',
@@ -81,6 +108,7 @@ export class GooglePlayBillingService {
           currencyCode: product.currencyCode || 'USD',
         };
       }
+      console.warn(`⚠️ Product not found: ${productId}`);
       return null;
     } catch (error) {
       console.error('❌ Error fetching product details:', error);
@@ -88,7 +116,13 @@ export class GooglePlayBillingService {
     }
   }
 
-  async purchaseProduct(productId: string): Promise<{ success: boolean; purchaseToken?: string; error?: string }> {
+  // ✅ FIXED: Proper purchase handling with customer info
+  async purchaseProduct(productId: string, type: string): Promise<{ 
+    success: boolean; 
+    purchaseToken?: string; 
+    customerInfo?: any;
+    error?: string 
+  }> {
     if (!this.initialized) {
       await this.initialize();
     }
@@ -97,26 +131,79 @@ export class GooglePlayBillingService {
       console.log(`💰 Initiating purchase for: ${productId}`);
       
       const offerings = await Purchases.getOfferings();
-      const pkg = offerings.current?.availablePackages?.find(
+      const allPackages = offerings.current?.availablePackages || [];
+      console.log('📦 Available packages:', allPackages.map(p => p.product.identifier));
+      
+      const pkg = allPackages.find(
         p => p.product.identifier === productId
       );
 
       if (!pkg) {
-        return { success: false, error: 'Product not found' };
+        return { success: false, error: `Product "${productId}" not found` };
       }
 
-      const purchase = await Purchases.purchasePackage({ package: pkg });
+      console.log(`✅ Found package for ${productId}`);
+
+      // ✅ CORRECT: Use purchaseStoreProduct
+      const purchaseResult = await Purchases.purchaseStoreProduct({
+        product: pkg.product,
+      });
       
-      if (purchase) {
+      console.log('📦 Purchase result:', purchaseResult);
+      
+      // ✅ Extract customer info from the result
+      const customerInfo = purchaseResult.customerInfo;
+      
+      if (customerInfo) {
+        // ✅ Check if entitlement is active
+        const entitlement = customerInfo.entitlements?.active?.['logos_daily_pro'];
+        
+        if (entitlement) {
+          // ✅ Get the purchase token from the entitlement
+          const purchaseToken = (entitlement as any).purchaseToken || 
+                               (entitlement as any).productIdentifier || 
+                               productId;
+          
+          console.log('✅ Entitlement active, purchase token:', purchaseToken);
+          
+          return {
+            success: true,
+            purchaseToken: purchaseToken,
+            customerInfo: customerInfo
+          };
+        }
+        
+        // ✅ If entitlement not active but purchase succeeded, we might have a store transaction
+        console.log('⚠️ Entitlement not active, checking transaction...');
+        
+        // Try to get transaction info from the result
+        const transaction = (purchaseResult as any).transaction;
+        if (transaction) {
+          const purchaseToken = transaction.transactionIdentifier || 
+                               transaction.productIdentifier || 
+                               productId;
+          
+          return {
+            success: true,
+            purchaseToken: purchaseToken,
+            customerInfo: customerInfo
+          };
+        }
+        
+        // Fallback: return success with product ID as token
         return {
           success: true,
-          purchaseToken: purchase.purchase?.transactionIdentifier || 'purchase_success',
+          purchaseToken: productId,
+          customerInfo: customerInfo
         };
       }
       
-      return { success: false, error: 'Purchase failed' };
+      return { success: false, error: 'No customer info returned from purchase' };
     } catch (error: any) {
       console.error('❌ Purchase error:', error);
+      if (error.message?.includes('User cancelled') || error.message?.includes('user cancelled')) {
+        return { success: false, error: 'User cancelled purchase' };
+      }
       return {
         success: false,
         error: error.message || 'Failed to complete purchase',
@@ -124,22 +211,38 @@ export class GooglePlayBillingService {
     }
   }
 
-  async checkPurchaseStatus(): Promise<{ isPurchased: boolean; productId?: string }> {
+  // ✅ Method to get customer info after purchase
+  async getCustomerInfo() {
     try {
       if (!this.initialized) {
         await this.initialize();
       }
-      
-      const customerInfo = await Purchases.getCustomerInfo();
-      const entitlement = customerInfo.entitlements.active['pro'];
+      const info = await Purchases.getCustomerInfo();
+      console.log('📦 Customer info retrieved');
+      return info;
+    } catch (error) {
+      console.error('❌ Error getting customer info:', error);
+      return null;
+    }
+  }
+
+  async checkPurchaseStatus(): Promise<{ isPurchased: boolean; productId?: string; customerInfo?: any }> {
+    try {
+      if (!this.initialized) {
+        await this.initialize();
+      }
+      const getInfoResult = await Purchases.getCustomerInfo();
+      const customerInfo = (getInfoResult as any).customerInfo || getInfoResult;
+      const entitlement = customerInfo.entitlements?.active?.['logos_daily_pro'];
       
       if (entitlement) {
         return {
           isPurchased: true,
           productId: entitlement.productIdentifier,
+          customerInfo: customerInfo
         };
       }
-      return { isPurchased: false };
+      return { isPurchased: false, customerInfo: customerInfo };
     } catch (error) {
       console.error('❌ Error checking purchase status:', error);
       return { isPurchased: false };
@@ -151,14 +254,43 @@ export class GooglePlayBillingService {
       if (!this.initialized) {
         await this.initialize();
       }
-      
-      const customerInfo = await Purchases.restorePurchases();
-      const activeEntitlements = customerInfo.entitlements.active;
-      const productIds = Object.values(activeEntitlements).map(e => e.productIdentifier);
+      const restoreResult = await Purchases.restorePurchases();
+      const customerInfo = (restoreResult as any).customerInfo || restoreResult;
+      const activeEntitlements = customerInfo.entitlements?.active || {};
+      const productIds = Object.values(activeEntitlements).map((e: any) => e.productIdentifier);
+      console.log('✅ Restored purchases:', productIds);
       return productIds;
     } catch (error) {
       console.error('❌ Error restoring purchases:', error);
       return [];
+    }
+  }
+
+  // ✅ Helper method to sync Pro status with backend
+  async syncProStatusWithBackend(userId: string): Promise<boolean> {
+    try {
+      const status = await this.checkPurchaseStatus();
+      if (status.isPurchased) {
+        const response = await fetch(
+          'https://logos-daily-backend.onrender.com/api/payments/sync-revenuecat',
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              userId: userId,
+              isPro: true,
+              customerInfo: status.customerInfo
+            })
+          }
+        );
+        const data = await response.json();
+        console.log('📦 Sync response:', data);
+        return data.success === true;
+      }
+      return false;
+    } catch (error) {
+      console.error('❌ Error syncing with backend:', error);
+      return false;
     }
   }
 }

@@ -73,19 +73,28 @@ const App: React.FC = () => {
     };
   }, [navigate, setProStatus]);
 
-  // 🔥 Auth listener
+  // 🔥 Auth listener - Complete merged version
   useEffect(() => {
     const unsubscribe = onAuthChange(async (user) => {
       console.log('App: Auth state changed', user?.email);
     
       if (user) {
-        localStorage.setItem('logos_user', JSON.stringify({
+        // ✅ Store user in a persistent way
+        const userData = {
           uid: user.uid,
           email: user.email,
           displayName: user.displayName,
           photoURL: user.photoURL,
-        }));
-      
+        };
+        
+        localStorage.setItem('logos_user', JSON.stringify(userData));
+        // ✅ Also store the UID separately for easy access
+        localStorage.setItem('currentUserId', user.uid);
+        
+        // ✅ Set in store
+        setCurrentUser(userData);
+        
+        // ✅ Check localStorage for Pro status
         const savedPro = localStorage.getItem(`isPro_${user.uid}`);
         console.log('📝 Saved Pro from localStorage:', savedPro);
 
@@ -93,7 +102,8 @@ const App: React.FC = () => {
           setProStatus(true);
           console.log('✅ Pro set from localStorage');
         }
-         
+        
+        // ✅ Check backend for Pro status
         try {
           console.log('🔍 Checking backend Pro status for:', user.uid);
           const controller = new AbortController();
@@ -113,14 +123,46 @@ const App: React.FC = () => {
             localStorage.setItem(`isPro_${user.uid}`, 'true');
             localStorage.setItem('logos_daily_pro', 'true');
             console.log('✅ Pro set from backend');
+          } else {
+            // ✅ If backend says not Pro but we have localStorage, sync it
+            if (savedPro === 'true') {
+              console.log('🔄 Syncing local Pro status to backend...');
+              try {
+                await fetch(
+                  'https://logos-daily-backend.onrender.com/api/payments/sync-revenuecat',
+                  {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      userId: user.uid,
+                      isPro: true,
+                      source: 'local_storage'
+                    })
+                  }
+                );
+                console.log('✅ Synced Pro status to backend');
+              } catch (syncError) {
+                console.error('❌ Failed to sync Pro status:', syncError);
+              }
+            }
           }
         } catch (e) {
           console.log('Backend check skipped (timeout or offline)');
         }
+      } else {
+        // ✅ Clear user data on sign out
+        localStorage.removeItem('currentUserId');
+        localStorage.removeItem('logos_user');
+        // Don't remove Pro status as it's tied to the user
+        console.log('👤 User signed out, cleared session data');
       }
     });
-  
-    return () => unsubscribe();
+
+    return () => {
+      if (unsubscribe && typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
   }, [setProStatus, setCurrentUser]);
 
   // 🔥 App focus handler for pending Pro status

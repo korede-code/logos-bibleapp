@@ -9,18 +9,18 @@
  * - Recent highlights and bookmarks
  * - Quick navigation to study tools
  * 
- * 🔥 UPDATED: Now uses real Bible API for Verse of the Day
- * 🔥 FIXED: Start Free Trial button now works
+ * 🔥 FIXED: Navigation for both card and Read Chapter button
+ * 🔥 FIXED: Proper parsing of DAILY_VERSES fallback data
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   BookOpen, Bookmark, Flame, Star, ChevronRight,
   Sun, Cloud, CloudRain, Target,
   TrendingUp, Clock, Wifi, Bell, RefreshCw, Crown
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { READING_PLANS, BIBLE_BOOKS } from '../data/bibleData';
+import { DAILY_VERSES, BIBLE_BOOKS } from '../data/bibleData';
 import { format } from 'date-fns';
 import { bibleApi } from '../services/bibleApiClient';
 import ProUpgradeModal from './ProUpgradeModal';
@@ -44,8 +44,30 @@ const defaultTheme = {
   warning: '#f59e0b'
 };
 
+// ✅ Helper function to parse verse reference like "John 3:16"
+const parseVerseReference = (reference: string) => {
+  // Handle formats like "John 3:16" or "Psalms 23:1"
+  const match = reference.match(/^([A-Za-z\s]+)\s+(\d+):(\d+)$/);
+  if (match) {
+    return {
+      book: match[1].trim(),
+      chapter: parseInt(match[2]),
+      verse: parseInt(match[3])
+    };
+  }
+  return null;
+};
+
+// ✅ Helper to find book ID
+const findBookId = (bookName: string): number => {
+  const book = BIBLE_BOOKS.find(b => 
+    b.name.toLowerCase() === bookName.toLowerCase()
+  );
+  return book?.id || 43; // Default to John
+};
+
 const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => {
-  const t = theme || defaultTheme; // add fallback
+  const t = theme || defaultTheme;
   const {
     readerSettings, readingPosition, streak,
     activePlans, highlights, bookmarks,
@@ -57,13 +79,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     isOnline
   } = useAppStore();
 
-  
-  //const theme = getTheme(readerSettings.theme);
   const [greeting, setGreeting] = useState('');
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening' | 'night'>('morning');
   const [refreshing, setRefreshing] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  
+  const hasFetchedRef = useRef(false);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check current user
   useEffect(() => {
@@ -73,97 +97,242 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     return () => unsubscribe();
   }, []);
 
+  // ✅ Get the current verse to display (API verse or fallback)
+  const getCurrentVerse = useCallback(() => {
+    // If we have a real verse from API, use it
+    if (realVerseOfTheDay) {
+      return {
+        reference: realVerseOfTheDay.reference,
+        text: realVerseOfTheDay.text,
+        translation: realVerseOfTheDay.translation || 'NIV',
+        book: realVerseOfTheDay.book || extractBookFromReference(realVerseOfTheDay.reference),
+        chapter: realVerseOfTheDay.chapter || extractChapterFromReference(realVerseOfTheDay.reference),
+        verse: realVerseOfTheDay.verse || extractVerseFromReference(realVerseOfTheDay.reference),
+        isReal: true
+      };
+    }
+    
+    // Otherwise use DAILY_VERSES as fallback
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    const fallbackVerse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
+    
+    if (fallbackVerse) {
+      const parsed = parseVerseReference(fallbackVerse.reference);
+      return {
+        reference: fallbackVerse.reference,
+        text: fallbackVerse.text,
+        translation: fallbackVerse.translation || 'KJV',
+        book: parsed?.book || 'John',
+        chapter: parsed?.chapter || 3,
+        verse: parsed?.verse || 16,
+        isReal: false
+      };
+    }
+    
+    return null;
+  }, [realVerseOfTheDay]);
 
-  // Fetch real verse of the day on mount
+  // ✅ Navigation helper for verse card - FIXED
+  const navigateToVerse = useCallback((verse: any, goToChapter: boolean = false) => {
+    if (!verse) {
+      console.error('❌ No verse data to navigate to');
+      return;
+    }
+    
+    console.log(`📖 Navigating to ${goToChapter ? 'chapter' : 'verse'}:`, verse.reference);
+    console.log('📖 Verse data:', verse);
+    
+    // ✅ Find the book in BIBLE_BOOKS
+    let bookData = BIBLE_BOOKS.find(b => 
+      b.name.toLowerCase() === verse.book.toLowerCase()
+    );
+    
+    // ✅ If not found, try partial match
+    if (!bookData) {
+      bookData = BIBLE_BOOKS.find(b => 
+        verse.reference.toLowerCase().includes(b.name.toLowerCase())
+      );
+    }
+    
+    // ✅ If still not found, try to find by abbreviation
+    if (!bookData) {
+      bookData = BIBLE_BOOKS.find(b => 
+        verse.book.toLowerCase().includes(b.name.toLowerCase()) ||
+        b.name.toLowerCase().includes(verse.book.toLowerCase())
+      );
+    }
+    
+    if (bookData) {
+      console.log('✅ Found book:', bookData.name, 'ID:', bookData.id);
+      setReadingPosition({ 
+        book: bookData.name, 
+        bookId: bookData.id, 
+        chapter: verse.chapter,
+        verse: goToChapter ? 1 : verse.verse
+      });
+      navigate('reader');
+    } else {
+      console.error('❌ Book not found for:', verse.book);
+      console.log('📚 Available books:', BIBLE_BOOKS.map(b => b.name));
+      
+      // ✅ Fallback: try to navigate anyway using the verse book name
+      setReadingPosition({ 
+        book: verse.book, 
+        bookId: findBookId(verse.book),
+        chapter: verse.chapter,
+        verse: goToChapter ? 1 : verse.verse
+      });
+      navigate('reader');
+    }
+  }, [setReadingPosition, navigate]);
+
+  // ✅ Optimized fetch with caching
   useEffect(() => {
-    fetchRealVerseOfTheDay();
-  }, [fetchRealVerseOfTheDay]);
+    // Check if we already have a verse cached
+    const cachedVerse = localStorage.getItem('votd_cached');
+    const cachedTimestamp = localStorage.getItem('votd_timestamp');
+    const now = Date.now();
+    const cacheAge = cachedTimestamp ? now - parseInt(cachedTimestamp) : Infinity;
+    const cacheValid = cacheAge < 3600000; // 1 hour cache
 
-  // Handle manual refresh
-  const handleRefresh = async () => {
+    // If we have a valid cached verse and no real verse loaded, use it immediately
+    if (cachedVerse && cacheValid && !realVerseOfTheDay) {
+      try {
+        const verse = JSON.parse(cachedVerse);
+        console.log('📦 Using cached verse:', verse.reference);
+        useAppStore.setState({ realVerseOfTheDay: verse, isApiLoading: false });
+        setIsInitialLoad(false);
+        return;
+      } catch (e) {
+        console.error('Failed to parse cached verse:', e);
+      }
+    }
+
+    // Only fetch if we haven't already and not currently loading
+    if (!hasFetchedRef.current && !isApiLoading && !realVerseOfTheDay) {
+      hasFetchedRef.current = true;
+      
+      const fetchVerse = () => {
+        console.log('🔄 Fetching verse of the day...');
+        fetchRealVerseOfTheDay()
+          .then(() => {
+            setIsInitialLoad(false);
+            const verse = useAppStore.getState().realVerseOfTheDay;
+            if (verse) {
+              localStorage.setItem('votd_cached', JSON.stringify(verse));
+              localStorage.setItem('votd_timestamp', String(Date.now()));
+            }
+          })
+          .catch((error) => {
+            console.error('Failed to fetch verse:', error);
+            setIsInitialLoad(false);
+          });
+      };
+
+      if ('requestIdleCallback' in window) {
+        (window as any).requestIdleCallback(fetchVerse, { timeout: 2000 });
+      } else {
+        fetchTimeoutRef.current = setTimeout(fetchVerse, 100);
+      }
+    } else if (realVerseOfTheDay) {
+      setIsInitialLoad(false);
+    }
+
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+      }
+    };
+  }, [fetchRealVerseOfTheDay, isApiLoading, realVerseOfTheDay]);
+
+  // ✅ Handle manual refresh
+  const handleRefresh = useCallback(async () => {
     console.log('🔄 Refresh button clicked - fetching random verse');
+    
+    if (refreshing || isApiLoading) {
+      console.log('⏳ Already refreshing or loading, skipping...');
+      return;
+    }
+    
     setRefreshing(true);
+    
     try {
+      localStorage.removeItem('votd_cached');
+      localStorage.removeItem('votd_timestamp');
       localStorage.removeItem('votd_random');
-      const timestamp = Date.now();
+      
+      useAppStore.setState({ isApiLoading: true });
+      
       const response = await bibleApi.getVerseOfTheDay(true);
       
       console.log('📥 API Response:', response);
       
       if (response.success && response.data) {
-        useAppStore.setState({ 
-          realVerseOfTheDay: response.data,
-          isApiLoading: false 
-        });
-        console.log('✅ New verse loaded:', response.data.reference);
+        const verseData = {
+          reference: response.data.reference,
+          text: response.data.text,
+          translation: response.data.translation || 'NIV',
+          book: response.data.book || extractBookFromReference(response.data.reference),
+          chapter: response.data.chapter || extractChapterFromReference(response.data.reference),
+          verse: response.data.verse || extractVerseFromReference(response.data.reference)
+        };
         
-        // Show toast notification
-        const toast = document.createElement('div');
-        toast.textContent = `✨ New verse: ${response.data.reference}`;
-        toast.style.cssText = `
-          position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-          background: #4CAF50; color: white; padding: 10px 20px;
-          border-radius: 10px; z-index: 1000; font-size: 14px;
-          animation: fadeInUp 0.3s ease;
-        `;
-        document.body.appendChild(toast);
-        setTimeout(() => toast.remove(), 2000);
+        useAppStore.setState({ 
+          realVerseOfTheDay: verseData,
+          isApiLoading: false,
+          apiError: null
+        });
+        
+        localStorage.setItem('votd_cached', JSON.stringify(verseData));
+        localStorage.setItem('votd_timestamp', String(Date.now()));
+        
+        console.log('✅ New verse loaded:', verseData.reference);
+        showToast(`✨ New verse: ${verseData.reference}`, 'success');
       } else {
         throw new Error('No verse data');
       }
     } catch (error) {
       console.error('❌ Refresh failed:', error);
-      const toast = document.createElement('div');
-      toast.textContent = 'Failed to refresh verse. Please try again.';
-      toast.style.cssText = `
-        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        background: #e53935; color: white; padding: 10px 20px;
-        border-radius: 10px; z-index: 1000; font-size: 14px;
-        animation: fadeInUp 0.3s ease;
-      `;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      useAppStore.setState({ 
+        apiError: 'Failed to load verse. Please try again.',
+        isApiLoading: false
+      });
+      showToast('Failed to refresh verse. Please try again.', 'error');
     } finally {
       setRefreshing(false);
     }
+  }, [refreshing, isApiLoading]);
+
+  const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
+    const colors = {
+      success: '#4CAF50',
+      error: '#e53935',
+      info: theme?.accent || '#488AFF'
+    };
+    
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: ${colors[type]}; color: white; padding: 10px 20px;
+      border-radius: 10px; z-index: 1000; font-size: 14px;
+      animation: fadeInUp 0.3s ease; max-width: 90%; text-align: center;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      toast.style.transition = 'opacity 0.3s ease';
+      setTimeout(() => toast.remove(), 300);
+    }, 2500);
   };
 
-  // Handle Pro upgrade button click
   const handleUpgradeClick = () => {
     if (!currentUser) {
-      // If not logged in, navigate to settings to sign in first
       navigate('settings');
-      const toast = document.createElement('div');
-      toast.textContent = 'Please sign in first to upgrade to Pro';
-      toast.style.cssText = `
-        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-        background: #f59e0b; color: white; padding: 10px 20px;
-        border-radius: 10px; z-index: 1000; font-size: 14px;
-        animation: fadeInUp 0.3s ease;
-      `;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      showToast('Please sign in first to upgrade to Pro', 'info');
     } else {
       setShowProModal(true);
     }
-  };
-
-  // When clicking a bookmark, navigate to the specific verse
-  const handleBookmarkClick = (bookmark: {
-    bookId: number;
-    book: string;
-    chapter: number;
-    verse: number;
-    label: string;
-  }) => {
-    // Set the reading position with the exact verse from the bookmark
-    setReadingPosition({
-      book: bookmark.book,
-      bookId: bookmark.bookId,
-      chapter: bookmark.chapter,
-      verse: bookmark.verse, // Make sure this is set correctly
-    });
-    navigate('reader');
   };
 
   useEffect(() => {
@@ -179,12 +348,18 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     }
   }, []);
 
-  const greetingIcon = { morning: <Sun size={18} />, afternoon: <Cloud size={18} />, evening: <CloudRain size={18} />, night: <Star size={18} /> }[timeOfDay];
+  const greetingIcon = { 
+    morning: <Sun size={18} />, 
+    afternoon: <Cloud size={18} />, 
+    evening: <CloudRain size={18} />, 
+    night: <Star size={18} /> 
+  }[timeOfDay];
 
   const lastReadBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
-
-  // Get recent highlights (last 3)
   const recentHighlights = highlights.slice(-3).reverse();
+  
+  // ✅ Get the current verse
+  const currentVerse = getCurrentVerse();
 
   const StreakFire = ({ count }: { count: number }) => (
     <div className="flex items-center gap-1">
@@ -195,6 +370,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       ))}
     </div>
   );
+
+  const shouldShowLoading = isInitialLoad && !currentVerse && isApiLoading;
+  const shouldShowError = apiError && !currentVerse;
+  const shouldShowVerse = currentVerse;
 
   return (
     <div
@@ -217,7 +396,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             </h1>
           </div>
           <div className="flex items-center gap-3">
-            {/* Online/Offline status indicator */}
             <div
               className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
               style={{ 
@@ -229,7 +407,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
               <Wifi size={10} style={{ color: isOnline ? '#4CAF50' : '#f59e0b' }} />
               <span>{isOnline ? 'Synced' : 'Offline'}</span>
             </div>
-            {/* Pro Badge */}
             {isPro && (
               <div
                 className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold"
@@ -239,7 +416,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
                 PRO
               </div>
             )}
-            {/* Refresh button */}
             <button
               onClick={handleRefresh}
               disabled={refreshing || isApiLoading}
@@ -265,7 +441,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
         </div>
       </div>
 
-      {/* Offline warning banner */}
       {!isOnline && (
         <div className="px-5 mt-2">
           <div 
@@ -305,28 +480,36 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           </div>
         </div>
 
-        {/* Daily Verse */}
+        {/* ✅ Daily Verse - FIXED with proper navigation */}
         <section aria-label="Daily Verse">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: theme.textMuted }}>✦ Verse of the Day</h2>
             <span className="text-xs font-medium" style={{ color: theme.textMuted }}>{format(new Date(), 'MMMM d')}</span>
           </div>
           
-          {/* Loading state */}
-          {isApiLoading && !realVerseOfTheDay ? (
+          {shouldShowLoading ? (
             <div
-              className="rounded-2xl p-8 flex items-center justify-center"
+              className="rounded-2xl p-5 animate-pulse"
               style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
             >
-              <div className="animate-spin rounded-full h-8 w-8 border-2" style={{ borderColor: `${theme.accent} transparent ${theme.accent} transparent` }} />
+              <div className="h-3 w-24 rounded mb-3" style={{ backgroundColor: theme.surface }}></div>
+              <div className="space-y-2">
+                <div className="h-4 w-full rounded" style={{ backgroundColor: theme.surface }}></div>
+                <div className="h-4 w-3/4 rounded" style={{ backgroundColor: theme.surface }}></div>
+                <div className="h-4 w-1/2 rounded" style={{ backgroundColor: theme.surface }}></div>
+              </div>
+              <div className="flex justify-between mt-4">
+                <div className="h-3 w-32 rounded" style={{ backgroundColor: theme.surface }}></div>
+                <div className="h-3 w-20 rounded" style={{ backgroundColor: theme.surface }}></div>
+              </div>
             </div>
-          ) : apiError && !realVerseOfTheDay ? (
-            /* Error state */
+          ) : shouldShowError ? (
             <div
               className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: theme.card, border: `1px solid #dc2626` }}
             >
               <p style={{ color: '#dc2626' }}>Unable to load verse</p>
+              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>{apiError}</p>
               <button
                 onClick={handleRefresh}
                 className="mt-3 px-4 py-2 rounded-lg text-sm"
@@ -335,53 +518,59 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
                 Retry
               </button>
             </div>
-          ) : realVerseOfTheDay ? (
-            /* Display real verse from API */
+          ) : shouldShowVerse ? (
+            /* ✅ Verse Card - Click to navigate to specific verse */
             <div
-              className="relative rounded-2xl p-5 overflow-hidden cursor-pointer active:scale-[0.99] transition-all duration-150"
+              className="relative rounded-2xl p-5 overflow-hidden cursor-pointer transition-all duration-150 hover:scale-[1.01] active:scale-[0.99]"
               style={{
                 background: `linear-gradient(145deg, #7B4F2E, #A0522D, #8B3A20)`,
               }}
               onClick={() => {
-                const bookData = BIBLE_BOOKS.find(b => 
-                  b.name.toLowerCase() === realVerseOfTheDay.book.toLowerCase() ||
-                  realVerseOfTheDay.reference.toLowerCase().startsWith(b.name.toLowerCase())
-                );
-                if (bookData) {
-                  setReadingPosition({ 
-                    book: realVerseOfTheDay.book, 
-                    bookId: bookData.id, 
-                    chapter: realVerseOfTheDay.chapter, 
-                    verse: realVerseOfTheDay.verse 
-                  });
-                }
-                navigate('reader');
+                console.log('📖 Card clicked - navigating to verse:', currentVerse.reference);
+                navigateToVerse(currentVerse, false);
               }}
-              aria-label={`Daily verse: ${realVerseOfTheDay.reference}`}
               role="button"
               tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  navigateToVerse(currentVerse, false);
+                }
+              }}
             >
               <div className="absolute top-2 right-4 text-6xl opacity-10 select-none font-serif text-white">✝</div>
 
               <p className="text-xs font-bold uppercase tracking-widest mb-3 opacity-70 text-white">
-                {realVerseOfTheDay.translation}
+                {currentVerse.translation || 'NIV'}
+                {!currentVerse.isReal && ' 📖'}
               </p>
+              
               <blockquote
                 className="text-lg leading-relaxed mb-4 text-white"
                 style={{ fontFamily: 'Crimson Pro, serif', fontStyle: 'italic', fontWeight: 500 }}
               >
-                "{realVerseOfTheDay.text}"
+                "{currentVerse.text}"
               </blockquote>
+              
               <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-white opacity-90">— {realVerseOfTheDay.reference}</p>
-                <div className="flex items-center gap-1.5 text-white opacity-70 text-xs">
+                <p className="text-sm font-bold text-white opacity-90">— {currentVerse.reference}</p>
+                
+                {/* ✅ Read Chapter Button - Navigate to chapter start */}
+                <button
+                  className="flex items-center gap-1.5 text-white bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 active:scale-95"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    console.log('📖 Read Chapter clicked - navigating to chapter:', currentVerse.book, currentVerse.chapter);
+                    navigateToVerse(currentVerse, true);
+                  }}
+                  type="button"
+                >
                   <span>Read Chapter</span>
                   <ChevronRight size={12} />
-                </div>
+                </button>
               </div>
             </div>
           ) : (
-            /* Fallback if no verse data */
             <div
               className="rounded-2xl p-6 text-center"
               style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
@@ -405,7 +594,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             onClick={() => navigate('reader')}
             className="w-full rounded-2xl p-4 flex items-center gap-4 transition-all duration-150 active:scale-[0.99] text-left"
             style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
-            aria-label={`Continue reading ${readingPosition.book} chapter ${readingPosition.chapter}`}
           >
             <div
               className="w-14 h-14 rounded-xl flex flex-col items-center justify-center flex-shrink-0"
@@ -436,7 +624,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           </button>
         </section>
 
-        {/* Recent Highlights Section */}
+        {/* Recent Highlights */}
         {recentHighlights.length > 0 && (
           <section aria-label="Recent Highlights">
             <div className="flex items-center justify-between mb-3">
@@ -450,35 +638,29 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {recentHighlights.map(highlight => {
-                const colorMap: Record<string, string> = {
-                  yellow: '#F0B400', green: '#38A060', blue: '#3A6CB0',
-                  pink: '#C04080', purple: '#8040CC', orange: '#D06020'
-                };
-                return (
-                  <button
-                    key={highlight.id}
-                    onClick={() => {
-                      setReadingPosition({ 
-                        book: highlight.book, 
-                        bookId: highlight.bookId, 
-                        chapter: highlight.chapter, 
-                        verse: highlight.verse 
-                      });
-                      navigate('reader');
-                    }}
-                    className="px-3 py-2 rounded-full text-sm transition-all active:scale-[0.98]"
-                    style={{ backgroundColor: theme.surface, color: theme.accent, border: `1px solid ${theme.accent}33` }}
-                  >
-                    {highlight.book} {highlight.chapter}:{highlight.verse}
-                  </button>
-                );
-              })}
+              {recentHighlights.map(highlight => (
+                <button
+                  key={highlight.id}
+                  onClick={() => {
+                    setReadingPosition({ 
+                      book: highlight.book, 
+                      bookId: highlight.bookId, 
+                      chapter: highlight.chapter, 
+                      verse: highlight.verse 
+                    });
+                    navigate('reader');
+                  }}
+                  className="px-3 py-2 rounded-full text-sm transition-all active:scale-[0.98]"
+                  style={{ backgroundColor: theme.surface, color: theme.accent, border: `1px solid ${theme.accent}33` }}
+                >
+                  {highlight.book} {highlight.chapter}:{highlight.verse}
+                </button>
+              ))}
             </div>
           </section>
         )}
 
-        {/* Pro Upsell - NOW WITH WORKING BUTTON */}
+        {/* Pro Upsell */}
         {!isPro && (
           <div
             className="rounded-2xl p-5 relative overflow-hidden cursor-pointer transition-all hover:opacity-90"
@@ -522,7 +704,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
                 onClick={stat.action}
                 className="rounded-2xl p-4 text-left transition-all duration-150 active:scale-[0.99]"
                 style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
-                aria-label={`${stat.label}: ${stat.value}`}
               >
                 <div className="flex items-center gap-2 mb-2" style={{ color: theme.accent }}>
                   {stat.icon}
@@ -534,7 +715,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           </div>
         </section>
 
-        {/* Study Tools Quick Access */}
+        {/* Study Tools */}
         <section aria-label="Study Tools">
           <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.textMuted }}>✦ Study Tools</h2>
           <div className="grid grid-cols-3 gap-3">
@@ -548,7 +729,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
                 onClick={tool.action}
                 className="rounded-2xl p-4 flex flex-col items-center gap-2 transition-all duration-150 active:scale-[0.98]"
                 style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
-                aria-label={tool.label}
               >
                 <span className="text-2xl">{tool.icon}</span>
                 <span className="text-xs font-semibold" style={{ color: theme.textMuted }}>{tool.label}</span>
@@ -563,15 +743,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       <ProUpgradeModal
         isOpen={showProModal}
         onClose={() => setShowProModal(false)}
-        userEmail={currentUser?.email || ''}
-        userId={currentUser?.uid || ''}
-        onSuccess={() => {
-          setShowProModal(false);
-        }}
-        themeMode={readerSettings.theme}
+        theme={theme}
       />
     </div>
   );
 };
+
+// ===== HELPER FUNCTIONS =====
+
+function extractBookFromReference(reference: string): string {
+  const match = reference.match(/^[A-Za-z\s]+(?=\s+\d+:\d+)/);
+  return match ? match[0].trim() : 'John';
+}
+
+function extractChapterFromReference(reference: string): number {
+  const match = reference.match(/\d+(?=:\d+)/);
+  return match ? parseInt(match[0]) : 1;
+}
+
+function extractVerseFromReference(reference: string): number {
+  const match = reference.match(/(?<=:)\d+/);
+  return match ? parseInt(match[0]) : 1;
+}
 
 export default HomeScreen;
