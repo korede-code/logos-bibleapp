@@ -144,9 +144,12 @@ function initGooglePlayAPI() {
 }
 
 // Endpoint to verify Google Play purchase
+// ✅ Add proper verification for both subscriptions and one-time purchases
 app.post('/api/google-play/verify-purchase', async (req, res) => {
   try {
-    const { purchaseToken, productId, userId } = req.body;
+    const { purchaseToken, productId, userId, customerInfo } = req.body;
+    
+    console.log('🔍 Verifying purchase:', { productId, userId, purchaseToken: purchaseToken?.substring(0, 20) + '...' });
     
     if (!purchaseToken || !productId || !userId) {
       return res.status(400).json({ 
@@ -157,41 +160,89 @@ app.post('/api/google-play/verify-purchase', async (req, res) => {
     
     const api = initGooglePlayAPI();
     if (!api) {
+      // ✅ Fallback: If Google Play API not available, trust RevenueCat
+      console.warn('⚠️ Google Play API not available, trusting RevenueCat...');
+      const userData = await getUserData(userId);
+      if (userData?.isPro) {
+        return res.json({ success: true, isPro: true });
+      }
+      
+      // ✅ If we have customerInfo from RevenueCat, use it
+      if (customerInfo?.entitlements?.active?.['logos_daily_pro']) {
+        const userData = {
+          isPro: true,
+          proSince: new Date().toISOString(),
+          productId: productId,
+          purchaseToken: purchaseToken,
+          source: 'revenuecat',
+          updatedAt: new Date().toISOString()
+        };
+        await saveUserData(userId, userData);
+        return res.json({ success: true, isPro: true });
+      }
+      
       return res.status(500).json({ 
         success: false, 
-        error: 'Google Play API not initialized' 
+        error: 'Google Play API not initialized and no fallback data' 
       });
     }
     
-    // Get purchase details from Google Play
-    const response = await api.purchases.subscriptions.get({
-      packageName: 'com.logosdaily.app',
-      subscriptionId: productId,
-      token: purchaseToken,
-    });
+    let isValid = false;
+    let purchaseData = null;
     
-    const purchase = response.data;
-    const isValid = purchase.paymentState === 1; // 1 = PAID
+    try {
+      // ✅ Try subscription verification first
+      const response = await api.purchases.subscriptions.get({
+        packageName: 'com.logosdaily.app',
+        subscriptionId: productId,
+        token: purchaseToken,
+      });
+      
+      purchaseData = response.data;
+      isValid = purchaseData.paymentState === 1;
+      
+    } catch (subError) {
+      console.log('⚠️ Not a subscription, trying one-time purchase...');
+      
+      // ✅ Try one-time purchase (INAPP) verification
+      try {
+        const response = await api.purchases.products.get({
+          packageName: 'com.logosdaily.app',
+          productId: productId,
+          token: purchaseToken,
+        });
+        
+        purchaseData = response.data;
+        isValid = purchaseData.purchaseState === 0; // 0 = PURCHASED
+      } catch (productError) {
+        console.error('❌ Product verification failed:', productError.message);
+        // ✅ Fallback: Check RevenueCat
+        if (customerInfo?.entitlements?.active?.['logos_daily_pro']) {
+          isValid = true;
+        }
+      }
+    }
     
     if (isValid) {
-      // Update user's Pro status
+      // ✅ Update user's Pro status
       const userData = {
         isPro: true,
         proSince: new Date().toISOString(),
         productId: productId,
         purchaseToken: purchaseToken,
-        expiryTime: purchase.expiryTimeMillis,
-        updatedAt: new Date().toISOString()
+        expiryTime: purchaseData?.expiryTimeMillis || null,
+        updatedAt: new Date().toISOString(),
+        verifiedAt: new Date().toISOString()
       };
       
-      await saveUserData(userId, userData);
+      const saved = await saveUserData(userId, userData);
       console.log(`✅ Pro activated for ${userId} via Google Play`);
       
       res.json({
         success: true,
         isPro: true,
         userId: userId,
-        expiryTime: purchase.expiryTimeMillis
+        expiryTime: purchaseData?.expiryTimeMillis
       });
     } else {
       console.warn(`⚠️ Purchase not valid for ${userId}`);
@@ -207,6 +258,33 @@ app.post('/api/google-play/verify-purchase', async (req, res) => {
       success: false,
       error: error.message || 'Failed to verify purchase'
     });
+  }
+});
+
+// ✅ Add endpoint to sync RevenueCat status
+app.post('/api/payments/sync-revenuecat', async (req, res) => {
+  try {
+    const { userId, isPro, customerInfo } = req.body;
+    
+    if (!userId) {
+      return res.status(400).json({ success: false, error: 'userId required' });
+    }
+    
+    if (isPro) {
+      const userData = {
+        isPro: true,
+        proSince: new Date().toISOString(),
+        source: 'revenuecat',
+        updatedAt: new Date().toISOString(),
+        customerInfo: customerInfo
+      };
+      await saveUserData(userId, userData);
+    }
+    
+    res.json({ success: true, isPro: isPro });
+  } catch (error) {
+    console.error('❌ Sync error:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
