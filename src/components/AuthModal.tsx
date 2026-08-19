@@ -126,8 +126,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     }
   };      
       
-
-
   
   const showToast = (message: string, bgColor: string) => {
     const toast = document.createElement('div');
@@ -158,7 +156,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
             </h2>
             <p className="text-xs mt-0.5" style={{ color: theme.textMuted }}>
               {mode === 'signin' && 'Sign in to continue your Bible study'}
-              {mode === 'signup' && 'Start your journey with Logos Daily'}
+              {mode === 'signup' && 'Start your journey with Synthesis by creating an account'}
               {mode === 'forgot' && 'Enter your email to reset password'}
             </p>
           </div>

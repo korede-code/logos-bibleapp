@@ -1,10 +1,14 @@
+// src/services/bibleApiClient.ts
+
 /**
  * Bible API Client Service
  * =========================
  * Handles all communication with the Bible API backend.
- * Implements caching, retry logic, and offline support.
+ * Implements caching, retry logic, and offline support with local KJV fallback.
  */
 import { CapacitorHttp } from '@capacitor/core';
+import { bibleLocal, BibleLocalVerse } from './bibleLocalService';
+
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
 const REQUEST_TIMEOUT = 10000; // 10 seconds
@@ -26,7 +30,7 @@ export interface BibleApiResponse {
   success: boolean;
   data?: any;
   error?: string;
-  source?: string;
+  source?: string; // 'local' | 'api' | 'cache'
   cached?: boolean;
   timestamp?: string;
 }
@@ -35,15 +39,29 @@ export interface VerseOfTheDayResponse {
   reference: string;
   text: string;
   translation: string;
+  book?: string;
+  chapter?: number;
+  verse?: number;
 }
 
 export interface SearchResult {
   reference: string;
   text: string;
   relevance?: number;
+  book?: string;
+  chapter?: number;
+  verse?: number;
 }
 
- //Simple in-memory cache for API responses
+export interface ChapterResponse {
+  verses: BibleVerse[];
+  translation: string;
+  source: string;
+}
+
+/**
+ * Simple in-memory cache for API responses
+ */
 class ApiCache {
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
   private defaultTTL = 3600000; // 1 hour in milliseconds
@@ -72,9 +90,19 @@ class ApiCache {
   remove(key: string): void {
     this.cache.delete(key);
   }
+
+  getStats(): { size: number; keys: string[] } {
+    return {
+      size: this.cache.size,
+      keys: Array.from(this.cache.keys()),
+    };
+  }
 }
 
- //Bible API Client Class 
+/**
+ * Bible API Client Class
+ * Handles all Bible data operations with local KJV fallback
+ */
 class BibleApiClient {
   private cache: ApiCache;
   private pendingRequests: Map<string, Promise<any>> = new Map();
@@ -83,10 +111,12 @@ class BibleApiClient {
     this.cache = new ApiCache();
   }
 
-  // Generic request method with retry logic and caching
+  /**
+   * Generic request method with retry logic and caching
+   */
   private async request<T>(
     endpoint: string,
-    options: any = {}, // Changed from RequestInit to any for CapacitorHttp
+    options: any = {},
     useCache: boolean = true,
     retries: number = MAX_RETRIES
   ): Promise<T> {
@@ -154,80 +184,242 @@ class BibleApiClient {
     return requestPromise;
   }
 
-  //Get Verse of the Day 
-  async getVerseOfTheDay(random: boolean = false) {
+  /**
+   * Get Verse of the Day - uses local KJV first for instant access
+   */
+  async getVerseOfTheDay(random: boolean = false): Promise<BibleApiResponse> {
+    // ✅ Use local Bible for KJV (instant, no API call)
+    const localVerse = bibleLocal.getVerseOfTheDay();
+    if (localVerse) {
+      console.log('📖 Using local KJV verse:', localVerse.book, localVerse.chapter, localVerse.verse);
+      return {
+        success: true,
+        data: {
+          reference: `${localVerse.book} ${localVerse.chapter}:${localVerse.verse}`,
+          text: localVerse.text,
+          translation: localVerse.translation || 'KJV',
+          book: localVerse.book,
+          chapter: localVerse.chapter,
+          verse: localVerse.verse
+        },
+        source: 'local'
+      };
+    }
+
+    // Fallback to API
     try {
       const timestamp = Date.now();
       const url = random 
         ? `/bible/votd?random=true&_=${timestamp}` 
         : `/bible/votd?_=${timestamp}`;
       
-      console.log(`📡 Fetching VOTD from: ${url}`);
-      const response = await this.request(url, {}, false);
-      console.log(`📥 VOTD response:`, response);
+      console.log(`📡 Fetching VOTD from API: ${url}`);
+      const response = await this.request<any>(url, {}, false);
+      
+      // Mark source if successful
+      if (response?.success !== false) {
+        return {
+          ...response,
+          source: 'api'
+        };
+      }
       return response;
     } catch (error) {
       console.error('Failed to fetch VOTD:', error);
+      return this.getFallbackVerse();
+    }
+  }
+
+  /**
+   * Get a Bible chapter - uses local KJV first
+   */
+  async getChapter(
+    translation: string, 
+    book: string, 
+    chapter: number
+  ): Promise<BibleApiResponse> {
+    // ✅ For KJV, use local file (instant)
+    if (translation === 'KJV' || translation === 'kjv') {
+      const localChapter = bibleLocal.getChapter(book, chapter);
+      if (localChapter) {
+        console.log(`📖 Using local KJV chapter: ${book} ${chapter} (${localChapter.verses.length} verses)`);
+        return {
+          success: true,
+          data: localChapter.verses.map(v => ({
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse,
+            text: v.text,
+          })),
+          translation: 'KJV',
+          source: 'local'
+        };
+      }
+    }
+
+    // For other translations or if not found locally, use API
+    try {
+      const endpoint = `/bible/${translation}/${book}/${chapter}`;
+      console.log(`📡 Fetching from API: ${endpoint}`);
+      const response = await this.request<BibleApiResponse>(endpoint);
       return {
-        success: true,
-        data: {
-          reference: 'John 3:16',
-          text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
-          translation: 'KJV'
-        }
+        ...response,
+        source: 'api'
+      };
+    } catch (error) {
+      console.error('Failed to fetch chapter:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch chapter' 
       };
     }
   }
 
-  //Get a Bible chapter
-  async getChapter(translation: string, book: string, chapter: number) {
-    try {
-      const endpoint = `/bible/${translation}/${book}/${chapter}`;
-      console.log(`📡 Fetching chapter: ${endpoint}`);
-      const response = await this.request(endpoint);
-      return response;
-    } catch (error) {
-      console.error('Failed to fetch chapter:', error);
-      return { success: false, error: 'Failed to fetch chapter' };
+  /**
+   * Get a specific verse - uses local KJV first
+   */
+  async getVerse(
+    translation: string, 
+    book: string, 
+    chapter: number, 
+    verse: number
+  ): Promise<BibleApiResponse> {
+    if (translation === 'KJV' || translation === 'kjv') {
+      const localVerse = bibleLocal.getVerse(book, chapter, verse);
+      if (localVerse) {
+        return {
+          success: true,
+          data: [{
+            book: localVerse.book,
+            chapter: localVerse.chapter,
+            verse: localVerse.verse,
+            text: localVerse.text,
+          }],
+          translation: 'KJV',
+          source: 'local'
+        };
+      }
     }
-  }
-
-  // Get a specific verse  
-  async getVerse(translation: string, book: string, chapter: number, verse: number) {
+    
     try {
       const endpoint = `/bible/${translation}/${book}/${chapter}/${verse}`;
-      console.log(`📡 Fetching verse: ${endpoint}`);
-      const response = await this.request(endpoint);
-      return response;
+      console.log(`📡 Fetching verse from API: ${endpoint}`);
+      const response = await this.request<BibleApiResponse>(endpoint);
+      return {
+        ...response,
+        source: 'api'
+      };
     } catch (error) {
       console.error('Failed to fetch verse:', error);
-      return { success: false, error: 'Failed to fetch verse' };
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch verse' 
+      };
     }
   }
 
- //Search the Bible 
+  /**
+   * Get multiple verses at once
+   */
+  async getVerses(
+    translation: string,
+    verses: Array<{ book: string; chapter: number; verse: number }>
+  ): Promise<BibleApiResponse> {
+    // For KJV, try local first
+    if (translation === 'KJV' || translation === 'kjv') {
+      const localVerses = verses
+        .map(v => bibleLocal.getVerse(v.book, v.chapter, v.verse))
+        .filter((v): v is BibleLocalVerse => v !== null);
+      
+      if (localVerses.length > 0) {
+        return {
+          success: true,
+          data: localVerses.map(v => ({
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse,
+            text: v.text,
+          })),
+          translation: 'KJV',
+          source: 'local'
+        };
+      }
+    }
+
+    // Fallback to API - batch request
+    try {
+      const endpoint = `/bible/${translation}/verses`;
+      const response = await this.request<BibleApiResponse>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ verses }),
+      });
+      return {
+        ...response,
+        source: 'api'
+      };
+    } catch (error) {
+      console.error('Failed to fetch verses:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch verses' 
+      };
+    }
+  }
+
+  /**
+   * Search the Bible - uses local KJV first
+   */
   async search(
     query: string,
     translation: string = 'KJV'
   ): Promise<BibleApiResponse & { results?: SearchResult[]; query?: string; count?: number }> {
+    if (translation === 'KJV' || translation === 'kjv') {
+      const results = bibleLocal.search(query);
+      if (results.length > 0) {
+        console.log(`📖 Local search found ${results.length} results`);
+        return {
+          success: true,
+          results: results.map(v => ({
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            text: v.text,
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse,
+          })),
+          count: results.length,
+          query,
+          source: 'local'
+        };
+      }
+    }
+
     try {
       const endpoint = `/bible/search?q=${encodeURIComponent(query)}&translation=${translation}`;
-      const response = await this.request<BibleApiResponse>(endpoint);
-      return response;
+      console.log(`📡 Searching API: ${endpoint}`);
+      const response = await this.request<BibleApiResponse & { results?: SearchResult[]; count?: number }>(endpoint);
+      return {
+        ...response,
+        source: 'api'
+      };
     } catch (error) {
       console.error('Search failed:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Search failed' 
       };
     }
   }
 
-  //Get available translations
+  /**
+   * Get available translations
+   */
   async getTranslations(): Promise<BibleApiResponse> {
     try {
       const response = await this.request<BibleApiResponse>('/bible/translations');
-      return response;
+      return {
+        ...response,
+        source: 'api'
+      };
     } catch (error) {
       console.error('Failed to fetch translations:', error);
       return {
@@ -237,18 +429,116 @@ class BibleApiClient {
     }
   }
 
- // Clear all cached data 
+  /**
+   * Get random verse
+   */
+  async getRandomVerse(translation: string = 'KJV'): Promise<BibleApiResponse> {
+    if (translation === 'KJV' || translation === 'kjv') {
+      const localVerse = bibleLocal.getRandomVerse();
+      if (localVerse) {
+        return {
+          success: true,
+          data: {
+            book: localVerse.book,
+            chapter: localVerse.chapter,
+            verse: localVerse.verse,
+            text: localVerse.text,
+          },
+          translation: 'KJV',
+          source: 'local'
+        };
+      }
+    }
+
+    try {
+      const endpoint = `/bible/${translation}/random`;
+      const response = await this.request<BibleApiResponse>(endpoint);
+      return {
+        ...response,
+        source: 'api'
+      };
+    } catch (error) {
+      console.error('Failed to fetch random verse:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch random verse' 
+      };
+    }
+  }
+
+  /**
+   * Get books of the Bible
+   */
+  async getBooks(translation: string = 'KJV'): Promise<BibleApiResponse> {
+    if (translation === 'KJV' || translation === 'kjv') {
+      const books = bibleLocal.getBooks();
+      return {
+        success: true,
+        data: books,
+        source: 'local'
+      };
+    }
+
+    try {
+      const endpoint = `/bible/${translation}/books`;
+      const response = await this.request<BibleApiResponse>(endpoint);
+      return {
+        ...response,
+        source: 'api'
+      };
+    } catch (error) {
+      console.error('Failed to fetch books:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch books' 
+      };
+    }
+  }
+
+  /**
+   * Get book info
+   */
+  async getBookInfo(book: string): Promise<BibleApiResponse> {
+    try {
+      const endpoint = `/bible/book/${encodeURIComponent(book)}`;
+      const response = await this.request<BibleApiResponse>(endpoint);
+      return {
+        ...response,
+        source: 'api'
+      };
+    } catch (error) {
+      console.error('Failed to fetch book info:', error);
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Failed to fetch book info' 
+      };
+    }
+  }
+
+  /**
+   * Clear all cached data
+   */
   clearCache(): void {
     this.cache.clear();
     console.log('🧹 API cache cleared');
   }
-  
-  // Check if API is reachable - also use CapacitorHttp  
+
+  /**
+   * Get cache statistics
+   */
+  getCacheStats(): { size: number; keys: string[] } {
+    return this.cache.getStats();
+  }
+
+  /**
+   * Check if API is reachable
+   */
   async healthCheck(): Promise<boolean> {
     try {
       const response = await CapacitorHttp.get({
         url: `${API_BASE_URL}/health`,
         connectTimeout: 5000,
+        readTimeout: 5000,
       });
       return response.status === 200;
     } catch {
@@ -256,14 +546,19 @@ class BibleApiClient {
     }
   }
 
-   // Sync offline changes (batch operation)
+  /**
+   * Sync offline changes (batch operation)
+   */
   async syncOfflineData(operations: Array<{ type: string; data: any }>): Promise<BibleApiResponse> {
     try {
       const response = await this.request<BibleApiResponse>('/sync', {
         method: 'POST',
         body: JSON.stringify({ operations }),
       });
-      return response;
+      return {
+        ...response,
+        source: 'api'
+      };
     } catch (error) {
       console.error('Sync failed:', error);
       return {
@@ -271,6 +566,47 @@ class BibleApiClient {
         error: error instanceof Error ? error.message : 'Sync failed',
       };
     }
+  }
+
+  /**
+   * Get fallback verse when everything fails
+   */
+  private getFallbackVerse(): BibleApiResponse {
+    return {
+      success: true,
+      data: {
+        reference: 'John 3:16',
+        text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
+        translation: 'KJV',
+        book: 'John',
+        chapter: 3,
+        verse: 16
+      },
+      source: 'local'
+    };
+  }
+
+  /**
+   * Check if local KJV data is available
+   */
+  isLocalKJVAvailable(): boolean {
+    return bibleLocal.isAvailable();
+  }
+
+  /**
+   * Get local KJV statistics
+   */
+  getLocalStats(): { 
+    available: boolean; 
+    totalVerses: number; 
+    books: string[];
+  } {
+    const books = bibleLocal.getBooks();
+    return {
+      available: books.length > 0,
+      totalVerses: bibleLocal.getTotalVerseCount(),
+      books: books,
+    };
   }
 }
 

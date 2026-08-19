@@ -16,8 +16,11 @@ export class GooglePlayBillingService {
   private apiKey: string;
 
   private constructor() {
-    // ✅ Load from environment with fallback
-    this.apiKey = process.env.VITE_REVENUECAT_API_KEY || 'goog_mvVUVCfGLAyhHPCYOdpuHEGSxPw';
+    // ✅ Fix: Use import.meta.env instead of process.env
+    // In Vite, use import.meta.env.VITE_REVENUECAT_API_KEY
+    // In Create React App, you can use a hardcoded fallback or window env
+    this.apiKey = (import.meta as any)?.env?.VITE_REVENUECAT_API_KEY || 
+                   'goog_mvVUVCfGLAyhHPCYOdpuHEGSxPw';
   }
 
   static getInstance(): GooglePlayBillingService {
@@ -68,38 +71,14 @@ export class GooglePlayBillingService {
     try {
       console.log(`🔍 Fetching product: ${productId}`);
       const offerings = await Purchases.getOfferings();
-
-      // ✅ Log all available packages
-      console.log('📦 All available packages:', 
-        offerings.current?.availablePackages.map(p => ({
-          identifier: p.product.identifier,
-          title: p.product.title,
-          price: p.product.priceString
-        }))
-      );
-
       const allPackages = offerings.current?.availablePackages || [];
-
-      // ✅ Try to find by exact match
-      let pkg = allPackages.find(
+      
+      const pkg = allPackages.find(
         p => p.product.identifier === productId
       );
       
-      // ✅ If not found, try to find by partial match
-      if (!pkg) {
-        console.log(`⚠️ Exact match not found for ${productId}, trying partial match...`);
-        pkg = allPackages.find(
-          p => p.product.identifier.includes(productId) || productId.includes(p.product.identifier)
-        );
-      }
-      
-        if (pkg) {
+      if (pkg) {
         const product = pkg.product;
-        console.log(`✅ Found product:`, {
-          id: product.identifier,
-          title: product.title,
-          price: product.priceString
-        });
         return {
           productId: product.identifier,
           title: product.title || 'Pro Subscription',
@@ -116,7 +95,6 @@ export class GooglePlayBillingService {
     }
   }
 
-  // ✅ FIXED: Proper purchase handling with customer info
   async purchaseProduct(productId: string, type: string): Promise<{ 
     success: boolean; 
     purchaseToken?: string; 
@@ -144,22 +122,18 @@ export class GooglePlayBillingService {
 
       console.log(`✅ Found package for ${productId}`);
 
-      // ✅ CORRECT: Use purchaseStoreProduct
       const purchaseResult = await Purchases.purchaseStoreProduct({
         product: pkg.product,
       });
       
       console.log('📦 Purchase result:', purchaseResult);
       
-      // ✅ Extract customer info from the result
       const customerInfo = purchaseResult.customerInfo;
       
       if (customerInfo) {
-        // ✅ Check if entitlement is active
         const entitlement = customerInfo.entitlements?.active?.['logos_daily_pro'];
         
         if (entitlement) {
-          // ✅ Get the purchase token from the entitlement
           const purchaseToken = (entitlement as any).purchaseToken || 
                                (entitlement as any).productIdentifier || 
                                productId;
@@ -173,10 +147,7 @@ export class GooglePlayBillingService {
           };
         }
         
-        // ✅ If entitlement not active but purchase succeeded, we might have a store transaction
         console.log('⚠️ Entitlement not active, checking transaction...');
-        
-        // Try to get transaction info from the result
         const transaction = (purchaseResult as any).transaction;
         if (transaction) {
           const purchaseToken = transaction.transactionIdentifier || 
@@ -190,7 +161,6 @@ export class GooglePlayBillingService {
           };
         }
         
-        // Fallback: return success with product ID as token
         return {
           success: true,
           purchaseToken: productId,
@@ -211,7 +181,6 @@ export class GooglePlayBillingService {
     }
   }
 
-  // ✅ Method to get customer info after purchase
   async getCustomerInfo() {
     try {
       if (!this.initialized) {
@@ -266,7 +235,6 @@ export class GooglePlayBillingService {
     }
   }
 
-  // ✅ Helper method to sync Pro status with backend
   async syncProStatusWithBackend(userId: string): Promise<boolean> {
     try {
       const status = await this.checkPurchaseStatus();

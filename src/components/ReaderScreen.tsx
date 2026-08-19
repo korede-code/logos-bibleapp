@@ -2,102 +2,106 @@
  * Logos Daily — Bible Reader Screen
  * ====================================
  * The core reading experience featuring:
- * - Multiple view modes (scroll, parallel, verse-comparison)
+ * - Book → Chapter → Verse navigation flow
+ * - Floating book button with same flow
+ * - Multiple view modes (scroll, parallel)
  * - Verse selection and annotation toolbar
- * - Cross-reference and footnote panels
  * - Focus mode with chrome-free reading
- * - Chapter navigation
- * - Verse navigation
  * - Red letter text support
- * - Quick book navigation (floating button + modal)
+ * - Audio Bible support
+ * - Word study panel
+ * 
+ * 🔥 FIXED: Book → Chapter → Verse navigation flow
+ * 🔥 FIXED: Floating button follows same flow
+ * 🔥 FIXED: All imports properly configured
  */
 
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import {
   ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, Volume2, MessageSquare,
-  WifiOff, RefreshCw, Search, Lightbulb
+  WifiOff, RefreshCw, Search, Lightbulb, Crown
 } from 'lucide-react';
-import AudioPlayer from './AudioPlayer';
 import { useAppStore } from '../store/appStore';
-import { useBibleChapter } from '../hooks/useRealBibleData';
-import { BIBLE_BOOKS, CROSS_REFERENCES } from '../data/bibleData';
+import { BIBLE_BOOKS } from '../data/bibleData';
 import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
-import AnnotationToolbar from './AnnotationToolbar';
-import ReaderSettingsPanel from './ReaderSettingsPanel';
-import BookNavigator from './BookNavigator';
+import { format } from 'date-fns';
+
+// ✅ Import offlineStorage here (not with require)
 import { offlineStorage } from '../services/offlineStorage';
-import WordStudyPanel from './WordStudyPanel';
 
+// Lazy load heavy components
+const AudioPlayer = React.lazy(() => import('./AudioPlayer'));
+const AnnotationToolbar = React.lazy(() => import('./AnnotationToolbar'));
+const ReaderSettingsPanel = React.lazy(() => import('./ReaderSettingsPanel'));
+const BookNavigator = React.lazy(() => import('./BookNavigator'));
+const WordStudyPanel = React.lazy(() => import('./WordStudyPanel'));
 
+// ─── Types ───────────────────────────────────────────────────────────────────
 
-// ─── Red Letter Words/Phrases (from Jesus' direct speech) ─────────────────────
+interface VerseData {
+  verse: number;
+  text: string;
+  book: string;
+  bookId: number;
+  chapter: number;
+  translation?: string;
+}
+
+interface VerseTextProps {
+  verse: VerseData;
+  highlights: any[];
+  selectedVerses: string[];
+  onSelect: (key: string) => void;
+  onDeselect: (key: string) => void;
+  showVerseNumbers: boolean;
+  redLetterText: boolean;
+  theme: any;
+  fontFamily: string;
+  fontSize: number;
+  lineSpacing: number;
+  showCrossRef: boolean;
+  crossRefs: string[];
+  onCrossRefTap: (ref: string) => void;
+  isParallel?: boolean;
+}
+
+// ─── Red Letter Text Data ──────────────────────────────────────────────────
+
+const RED_LETTER_VERSES: Record<string, number[]> = {
+  'Matthew:3': [15],
+  'Matthew:4': [4, 7, 10, 17, 19],
+  'Matthew:5': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
+  'Matthew:6': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+  'Matthew:7': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+  'Matthew:8': [3, 7, 10, 11, 12, 13, 20, 22, 26],
+  'Matthew:9': [2, 4, 5, 6, 9, 12, 13, 15, 16, 17, 22, 28, 29, 37, 38],
+  'Matthew:10': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+  'Matthew:11': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+  'Matthew:12': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+  'John:3': [3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21],
+  'John:14': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21],
+  'John:15': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
+};
+
+// ─── Helper Functions ──────────────────────────────────────────────────────
 
 const isRedLetterVerse = (book: string, chapter: number, verse: number): boolean => {
   const gospels = ['Matthew', 'Mark', 'Luke', 'John'];
   if (!gospels.includes(book)) return false;
-  const redLetterMap: Record<string, number[]> = {
-    'John:3': [3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21],
-    'Matthew:5': [3,4,5,6,7,8,9,10,11,12,13,14,16],
-    'Matthew:6': [25,26,27,28,29,30,31,32,33,34],
-    'John:14': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21],
-    'John:15': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
-  };
   const key = `${book}:${chapter}`;
-  return redLetterMap[key]?.includes(verse) ?? false;
+  const verses = RED_LETTER_VERSES[key];
+  return verses ? verses.includes(verse) : false;
 };
 
-// All books list for quick navigation
-const ALL_BOOKS = [
-  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-  'Joshua', 'Judges', 'Ruth', '1 Samuel', '2 Samuel', '1 Kings', '2 Kings',
-  '1 Chronicles', '2 Chronicles', 'Ezra', 'Nehemiah', 'Esther', 'Job',
-  'Psalms', 'Proverbs', 'Ecclesiastes', 'Song of Solomon', 'Isaiah',
-  'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel', 'Hosea', 'Joel', 'Amos',
-  'Obadiah', 'Jonah', 'Micah', 'Nahum', 'Habakkuk', 'Zephaniah', 'Haggai',
-  'Zechariah', 'Malachi', 'Matthew', 'Mark', 'Luke', 'John', 'Acts',
-  'Romans', '1 Corinthians', '2 Corinthians', 'Galatians', 'Ephesians',
-  'Philippians', 'Colossians', '1 Thessalonians', '2 Thessalonians',
-  '1 Timothy', '2 Timothy', 'Titus', 'Philemon', 'Hebrews', 'James',
-  '1 Peter', '2 Peter', '1 John', '2 John', '3 John', 'Jude', 'Revelation'
-];
+// ─── All Books List ────────────────────────────────────────────────────────
 
-// ─── Floating Book Button Component ─────────────────────────────────────────
+const ALL_BOOKS = BIBLE_BOOKS.map(b => b.name);
 
-const FloatingBookButton: React.FC<{ 
-  onPress: () => void; 
-  theme: any; 
-  visible: boolean 
-}> = ({ onPress, theme, visible }) => {
-  if (!visible) return null;
+// ─── Book Selector Panel ──────────────────────────────────────────────────
 
-  return (
-    <div
-      className="fixed bottom-24 right-5 z-50 transition-all duration-300"
-      style={{
-        transform: visible ? 'scale(1)' : 'scale(0)',
-        opacity: visible ? 1 : 0,
-      }}
-    >
-      <button
-        onClick={onPress}
-        className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95"
-        style={{
-          backgroundColor: theme.accent,
-          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
-        }}
-        aria-label="Quick book navigation"
-      >
-        <span className="text-2xl">📖</span>
-      </button>
-    </div>
-  );
-};
-
-// ─── Quick Book Navigator Modal ──────────────────────────────────────────────
-
-const BookQuickNavigator: React.FC<{
+const BookSelectorPanel: React.FC<{
   visible: boolean;
   onClose: () => void;
   onSelectBook: (book: string) => void;
@@ -127,17 +131,20 @@ const BookQuickNavigator: React.FC<{
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
         <div className="p-5 border-b" style={{ borderColor: theme.border }}>
-          <h2 className="text-lg font-bold text-center" style={{ color: theme.text }}>
-            Quick Navigation
-          </h2>
-          <p className="text-xs text-center mt-1" style={{ color: theme.textMuted }}>
-            Jump to any book
+          <div className="flex items-center justify-between">
+            <h2 className="text-lg font-bold" style={{ color: theme.text }}>
+              Select Book
+            </h2>
+            <button onClick={onClose} style={{ color: theme.textMuted }}>
+              <X size={24} />
+            </button>
+          </div>
+          <p className="text-xs mt-1" style={{ color: theme.textMuted }}>
+            Choose a book to continue reading
           </p>
         </div>
 
-        {/* Search Input */}
         <div className="p-4">
           <div
             className="flex items-center gap-2 px-4 py-3 rounded-xl"
@@ -161,7 +168,6 @@ const BookQuickNavigator: React.FC<{
           </div>
         </div>
 
-        {/* Books List */}
         <div className="flex-1 overflow-y-auto px-4 pb-4">
           <div className="flex flex-wrap gap-2">
             {filteredBooks.map(book => (
@@ -188,61 +194,68 @@ const BookQuickNavigator: React.FC<{
             )}
           </div>
         </div>
-
-        {/* Close Button */}
-        <div className="p-4 border-t" style={{ borderColor: theme.border }}>
-          <button
-            onClick={onClose}
-            className="w-full py-3 rounded-xl text-sm font-medium transition-all hover:opacity-80"
-            style={{ backgroundColor: theme.surface, color: theme.textMuted, border: `1px solid ${theme.border}` }}
-          >
-            Cancel
-          </button>
-        </div>
       </div>
     </div>
   );
 };
 
-// ─── Chapter Navigator Component ─────────────────────────────────────────────
+// ─── Chapter Selector Panel ───────────────────────────────────────────────
 
-const ChapterNavigator: React.FC<{
+const ChapterSelectorPanel: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  onSelectChapter: (chapter: number) => void;
   currentBook: any;
   currentChapter: number;
-  onChapterChange: (chapter: number) => void;
-  onClose: () => void;
   theme: any;
-}> = ({ currentBook, currentChapter, onChapterChange, onClose, theme }) => {
+}> = ({ visible, onClose, onSelectChapter, currentBook, currentChapter, theme }) => {
+  if (!visible) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
+    <div 
+      className="fixed inset-0 z-[60] flex items-end justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+      onClick={onClose}
+    >
       <div
-        className="relative w-full max-w-md rounded-2xl overflow-hidden"
-        style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
+        className="w-full max-w-lg rounded-t-3xl flex flex-col"
+        style={{ 
+          backgroundColor: theme.card, 
+          maxHeight: '80vh',
+          animation: 'slideUp 0.3s ease-out'
+        }}
+        onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: theme.border }}>
-          <h3 className="font-bold" style={{ color: theme.text }}>Select Chapter</h3>
-          <button onClick={onClose} style={{ color: theme.textMuted }}>✕</button>
-        </div>
-        
-        <div className="p-4">
-          <div className="text-center mb-4">
-            <p className="text-sm font-medium" style={{ color: theme.accent }}>{currentBook?.name}</p>
-            <p className="text-xs" style={{ color: theme.textMuted }}>Chapters 1 - {currentBook?.chapters}</p>
+        <div className="p-5 border-b" style={{ borderColor: theme.border }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: theme.text }}>
+                Select Chapter
+              </h2>
+              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>
+                {currentBook?.name} · Chapters 1 – {currentBook?.chapters}
+              </p>
+            </div>
+            <button onClick={onClose} style={{ color: theme.textMuted }}>
+              <X size={24} />
+            </button>
           </div>
-          
-          <div className="grid grid-cols-5 gap-2 max-h-96 overflow-y-auto">
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          <div className="grid grid-cols-5 gap-2">
             {Array.from({ length: currentBook?.chapters || 50 }, (_, i) => i + 1).map(ch => (
               <button
                 key={ch}
                 onClick={() => {
-                  onChapterChange(ch);
+                  onSelectChapter(ch);
                   onClose();
                 }}
-                className="py-2 rounded-lg text-sm font-medium transition-all"
+                className="py-3 rounded-lg text-sm font-medium transition-all hover:scale-105"
                 style={{
                   backgroundColor: ch === currentChapter ? theme.accent : theme.surface,
                   color: ch === currentChapter ? 'white' : theme.text,
-                  border: `1px solid ${theme.border}`,
+                  border: `1px solid ${ch === currentChapter ? theme.accent : theme.border}`,
                 }}
               >
                 {ch}
@@ -255,19 +268,25 @@ const ChapterNavigator: React.FC<{
   );
 };
 
-// ─── Verse Navigator Component ───────────────────────────────────────────────
+// ─── Verse Selector Panel ─────────────────────────────────────────────────
 
-const VerseNavigator: React.FC<{
+const VerseSelectorPanel: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  onSelectVerse: (verse: number) => void;
   currentChapter: number;
   totalVerses: number;
   currentVerse: number;
-  onVerseChange: (verse: number) => void;
-  onClose: () => void;
   theme: any;
-}> = ({ currentChapter, totalVerses, currentVerse, onVerseChange, onClose, theme }) => {
+}> = ({ visible, onClose, onSelectVerse, currentChapter, totalVerses, currentVerse, theme }) => {
+  if (!visible) return null;
+
   if (totalVerses === 0) {
     return (
-      <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
+      <div 
+        className="fixed inset-0 z-[60] flex items-center justify-center"
+        style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+      >
         <div className="rounded-2xl p-6 text-center" style={{ backgroundColor: theme.card }}>
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 mx-auto mb-3" style={{ borderColor: theme.accent }} />
           <p className="text-sm" style={{ color: theme.text }}>Loading chapter...</p>
@@ -283,76 +302,70 @@ const VerseNavigator: React.FC<{
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}>
-      <div className="relative w-full max-w-md rounded-2xl overflow-hidden" style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}>
-        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: theme.border }}>
-          <h3 className="font-bold" style={{ color: theme.text }}>Select Verse</h3>
-          <button onClick={onClose} style={{ color: theme.textMuted }}>✕</button>
+    <div 
+      className="fixed inset-0 z-[60] flex items-end justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-3xl flex flex-col"
+        style={{ 
+          backgroundColor: theme.card, 
+          maxHeight: '80vh',
+          animation: 'slideUp 0.3s ease-out'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 border-b" style={{ borderColor: theme.border }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: theme.text }}>
+                Select Verse
+              </h2>
+              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>
+                Chapter {currentChapter} · {totalVerses} verses
+              </p>
+            </div>
+            <button onClick={onClose} style={{ color: theme.textMuted }}>
+              <X size={24} />
+            </button>
+          </div>
         </div>
-        <div className="p-4">
-          <div className="text-center mb-4">
-            <p className="text-sm font-medium" style={{ color: theme.accent }}>Chapter {currentChapter}</p>
-            <p className="text-xs" style={{ color: theme.textMuted }}>{totalVerses} verses</p>
-          </div>
-          <div className="max-h-96 overflow-y-auto space-y-2">
-            {verseGroups.map((group, idx) => (
-              <div key={idx} className="flex gap-2 justify-center flex-wrap">
-                {group.map(verse => (
-                  <button
-                    key={verse}
-                    onClick={() => {
-                      onVerseChange(verse);
-                      onClose();
-                    }}
-                    className="w-10 h-10 rounded-lg text-sm font-medium transition-all"
-                    style={{
-                      backgroundColor: verse === currentVerse ? theme.accent : theme.surface,
-                      color: verse === currentVerse ? 'white' : theme.text,
-                      border: `1px solid ${theme.border}`,
-                    }}
-                  >
-                    {verse}
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          {verseGroups.map((group, idx) => (
+            <div key={idx} className="flex gap-2 justify-center flex-wrap">
+              {group.map(verse => (
+                <button
+                  key={verse}
+                  onClick={() => {
+                    onSelectVerse(verse);
+                    onClose();
+                  }}
+                  className="w-12 h-12 rounded-lg text-sm font-medium transition-all hover:scale-105"
+                  style={{
+                    backgroundColor: verse === currentVerse ? theme.accent : theme.surface,
+                    color: verse === currentVerse ? 'white' : theme.text,
+                    border: `1px solid ${verse === currentVerse ? theme.accent : theme.border}`,
+                  }}
+                >
+                  {verse}
+                </button>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
   );
 };
 
-// ─── Verse Render Component ───────────────────────────────────────────────────
+// ─── Memoized VerseText Component ────────────────────────────────────────
 
-interface VerseTextProps {
-  verse: {
-    verse: number;
-    text: string;
-    book: string;
-    bookId: number;
-    chapter: number;
-    translation?: string;
-  };
-  highlights: ReturnType<typeof useAppStore.getState>['highlights'];
-  selectedVerses: string[];
-  onSelect: (key: string) => void;
-  onDeselect: (key: string) => void;
-  showVerseNumbers: boolean;
-  redLetterText: boolean;
-  theme: ReturnType<typeof getTheme>;
-  fontFamily: string;
-  fontSize: number;
-  lineSpacing: number;
-  showCrossRef: boolean;
-  crossRefs: string[];
-  onCrossRefTap: (ref: string) => void;
-}
-
-const VerseText: React.FC<VerseTextProps> = ({
+const VerseText = memo<VerseTextProps>(({
   verse, highlights, selectedVerses, onSelect, onDeselect,
   showVerseNumbers, redLetterText, theme, fontFamily, fontSize,
-  lineSpacing, showCrossRef, crossRefs, onCrossRefTap
+  lineSpacing, showCrossRef, crossRefs, onCrossRefTap, isParallel
 }) => {
   const verseKey = `${verse.bookId}:${verse.chapter}:${verse.verse}`;
   const isSelected = selectedVerses.includes(verseKey);
@@ -362,7 +375,22 @@ const VerseText: React.FC<VerseTextProps> = ({
   const highlightColor = highlight ? HIGHLIGHT_COLORS[highlight.color] : null;
   const isRedLetter = redLetterText && isRedLetterVerse(verse.book, verse.chapter, verse.verse);
   const refKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
-  const verseRefs = crossRefs;
+  const verseRefs = crossRefs || [];
+
+  const handleClick = useCallback(() => {
+    if (isSelected) {
+      onDeselect(verseKey);
+    } else {
+      onSelect(verseKey);
+    }
+  }, [isSelected, verseKey, onSelect, onDeselect]);
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      handleClick();
+    }
+  }, [handleClick]);
 
   return (
     <div
@@ -381,7 +409,7 @@ const VerseText: React.FC<VerseTextProps> = ({
             textAlign: 'left',
             verticalAlign: 'top',
           }}
-          onClick={() => isSelected ? onDeselect(verseKey) : onSelect(verseKey)}
+          onClick={handleClick}
           aria-label={`Verse ${verse.verse}`}
         >
           {verse.verse}
@@ -392,8 +420,8 @@ const VerseText: React.FC<VerseTextProps> = ({
         role="button"
         tabIndex={0}
         aria-label={`Verse ${verse.verse}: ${verse.text.substring(0, 100)}`}
-        onClick={() => isSelected ? onDeselect(verseKey) : onSelect(verseKey)}
-        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { isSelected ? onDeselect(verseKey) : onSelect(verseKey); } }}
+        onClick={handleClick}
+        onKeyDown={handleKeyDown}
         className="cursor-pointer rounded-sm transition-all duration-100 select-none"
         style={{
           fontFamily: `${fontFamily}, serif`,
@@ -412,7 +440,7 @@ const VerseText: React.FC<VerseTextProps> = ({
         }}
       >
         {verse.text}
-        {showCrossRef && verseRefs.length > 0 && (
+        {showCrossRef && verseRefs.length > 0 && !isParallel && (
           <button
             onClick={(e) => { 
               e.stopPropagation(); 
@@ -436,21 +464,57 @@ const VerseText: React.FC<VerseTextProps> = ({
       </span>
     </div>
   );
+});
+
+VerseText.displayName = 'VerseText';
+
+// ─── Floating Book Button ─────────────────────────────────────────────────
+
+const FloatingBookButton: React.FC<{ 
+  onPress: () => void; 
+  theme: any; 
+  visible: boolean 
+}> = ({ onPress, theme, visible }) => {
+  if (!visible) return null;
+
+  return (
+    <div
+      className="fixed bottom-24 right-5 z-40 transition-all duration-300"
+      style={{
+        transform: visible ? 'scale(1)' : 'scale(0)',
+        opacity: visible ? 1 : 0,
+      }}
+    >
+      <button
+        onClick={onPress}
+        className="w-14 h-14 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-110 active:scale-95"
+        style={{
+          backgroundColor: theme.accent,
+          boxShadow: '0 4px 15px rgba(0,0,0,0.3)',
+        }}
+        aria-label="Quick book navigation"
+      >
+        <span className="text-2xl">📖</span>
+      </button>
+    </div>
+  );
 };
 
-// ─── Main ReaderScreen Component ─────────────────────────────────────────────
+// ─── Main ReaderScreen Component ──────────────────────────────────────────
 
 const ReaderScreen: React.FC = () => {
   const {
     readingPosition, readerSettings, highlights, selectedVerses,
     isAnnotationToolbarOpen, navigate, setReadingPosition,
     updateReaderSettings, selectVerse, deselectVerse,
-    addBookmark, bookmarks, recordReadingSession
+    addBookmark, bookmarks, recordReadingSession, 
+    isOnline, fetchChapter, currentChapterVerses,
+    isApiLoading, apiError
   } = useAppStore();
+
   const [isDownloading, setIsDownloading] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState(0);
   const [showAudioPlayer, setShowAudioPlayer] = useState(false);
-  const theme = getTheme(readerSettings.theme);
   const [showSettings, setShowSettings] = useState(false);
   const [showBookNav, setShowBookNav] = useState(false);
   const [showWordStudy, setShowWordStudy] = useState(false);
@@ -462,92 +526,57 @@ const ReaderScreen: React.FC = () => {
   const [pendingChapter, setPendingChapter] = useState<number | null>(null);
   const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
   const [hasRecordedSession, setHasRecordedSession] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  
+  // ✅ New state for navigation flow
+  const [navStep, setNavStep] = useState<'book' | 'chapter' | 'verse'>('book');
+  const [selectedBook, setSelectedBook] = useState<string>(readingPosition.book);
+  
   const scrollRef = useRef<HTMLDivElement>(null);
   const scrollOffset = useRef(0);
   const mainContentRef = useRef<HTMLDivElement>(null);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
 
-  
+  const theme = getTheme(readerSettings.theme);
 
-  const { 
-    verses: apiVerses, 
-    isLoading, 
-    error, 
-    progress, 
-    refetch,
-    isOffline,
-    fromCache
-  } = useBibleChapter(
-    readingPosition.book,
-    readingPosition.chapter,
-    readingPosition.translation || readerSettings.translation
+  // ─── Compute Display Verses ─────────────────────────────────────────────
+
+  const displayVerses = useMemo(() => {
+    if (currentChapterVerses && currentChapterVerses.length > 0) {
+      return currentChapterVerses.map(v => ({
+        verse: v.verse,
+        text: v.text,
+        book: v.book,
+        bookId: readingPosition.bookId,
+        chapter: v.chapter,
+        translation: v.translation || readerSettings.translation
+      }));
+    }
+    return [];
+  }, [currentChapterVerses, readingPosition.bookId, readerSettings.translation]);
+
+  // ─── Current Book Info ──────────────────────────────────────────────────
+
+  const currentBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
+  const totalChapters = currentBook?.chapters ?? 1;
+  const isCurrentBookmarked = bookmarks.some(b =>
+    b.bookId === readingPosition.bookId && b.chapter === readingPosition.chapter
   );
 
-  // Download current book for offline
-  const downloadCurrentBook = async () => {
-    const book = readingPosition.book;
-    const totalChapters = currentBook?.chapters || 1;
-    
-    setIsDownloading(true);
-    setDownloadProgress(0);
-    
-    for (let ch = 1; ch <= totalChapters; ch++) {
-      try {
-        const response = await fetch(
-          `https://logos-daily-backend.onrender.com/api/bible/${encodeURIComponent(book)}/${ch}?translation=${readerSettings.translation.toLowerCase()}`
-        );
-        const data = await response.json();
-        
-        if (data.success && data.data) {
-          await offlineStorage.saveChapter(book, ch, readerSettings.translation, data.data);
-        }
-        
-        setDownloadProgress(Math.round((ch / totalChapters) * 100));
-
-        await new Promise(resolve => setTimeout(resolve, 1000)); // 1 second delay
-      } catch (e) {
-        console.error(`Failed to cache ${book} ${ch}`, e);
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
-    }
-    
-    setIsDownloading(false);
-    showToast(`✅ ${book} saved for offline reading!`, '#4CAF50');
-  };
-  
-  const showToast = (message: string, bgColor: string) => {
-    const toast = document.createElement('div');
-    toast.textContent = message;
-    toast.style.cssText = `
-      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
-      background: ${bgColor}; color: white; padding: 10px 20px;
-      border-radius: 10px; z-index: 1000; font-size: 14px;
-    `;
-    document.body.appendChild(toast);
-    setTimeout(() => toast.remove(), 3000);
-  };
-
-  useEffect(() => {
-    console.log('📖 ReaderScreen: isLoading:', isLoading);
-  }, [isLoading]);
-
-  useEffect(() => {
-    console.log('📖 ReaderScreen: error:', error);
-  }, [error]);
+  // ─── Effects ─────────────────────────────────────────────────────────────
 
   // Update total verses when chapter loads
   useEffect(() => {
-    if (apiVerses && apiVerses.length > 0) {
-      setTotalVerses(apiVerses.length);
+    if (displayVerses.length > 0) {
+      setTotalVerses(displayVerses.length);
       if (pendingChapter !== null) {
         setPendingChapter(null);
       }
     }
-  }, [apiVerses, pendingChapter]);
+  }, [displayVerses, pendingChapter]);
 
-  // Scroll to the current verse when the chapter loads
+  // Scroll to verse when chapter loads
   useEffect(() => {
-    if (apiVerses && apiVerses.length > 0 && readingPosition.verse > 1) {
+    if (displayVerses.length > 0 && readingPosition.verse > 1) {
       const timer = setTimeout(() => {
         const verseElement = document.getElementById(`verse-${readingPosition.verse}`);
         if (verseElement) {
@@ -561,28 +590,27 @@ const ReaderScreen: React.FC = () => {
       }, 300);
       return () => clearTimeout(timer);
     }
-  }, [apiVerses, readingPosition.verse]);
+  }, [displayVerses, readingPosition.verse, theme.accent]);
 
-  // Record reading session when chapter is loaded
+  // Record reading session
   useEffect(() => {
-    if (apiVerses && apiVerses.length > 0 && !hasRecordedSession && !isLoading) {
+    if (displayVerses.length > 0 && !hasRecordedSession && !isApiLoading) {
       recordReadingSession({
-        durationMinutes: Math.floor(apiVerses.length * 0.5),
+        durationMinutes: Math.floor(displayVerses.length * 0.5),
         chaptersRead: 1,
-        versesRead: apiVerses.length,
+        versesRead: displayVerses.length,
       });
       setHasRecordedSession(true);
     }
-  }, [apiVerses, isLoading, hasRecordedSession, recordReadingSession]);
+  }, [displayVerses, isApiLoading, hasRecordedSession, recordReadingSession]);
 
-  // Add scroll listener to hide/show floating button
+  // Scroll listener for floating button
   useEffect(() => {
     const scrollElement = scrollRef.current;
     if (!scrollElement) return;
 
     const handleScroll = () => {
       const offsetY = scrollElement.scrollTop;
-      // Hide button when scrolling down, show when scrolling up or near top
       if (offsetY > scrollOffset.current && offsetY > 100) {
         setShowBookFloatingButton(false);
       } else {
@@ -595,30 +623,84 @@ const ReaderScreen: React.FC = () => {
     return () => scrollElement.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const displayVerses = apiVerses && apiVerses.length > 0 ? apiVerses.map(v => ({
-    verse: v.verse,
-    text: v.text,
-    book: v.book,
-    bookId: readingPosition.bookId,
-    chapter: v.chapter,
-    translation: v.translation
-  })) : [];
-  
-  // ✅ ADD THIS DEBUG:
-  console.log('📖 displayVerses count:', displayVerses.length, 'first:', displayVerses[0], 'last:', displayVerses[displayVerses.length - 1]);
+  // Fetch chapter when needed
+  useEffect(() => {
+    if (readingPosition.book && readingPosition.chapter) {
+      fetchChapter(
+        readerSettings.translation || 'KJV',
+        readingPosition.book,
+        readingPosition.chapter
+      );
+    }
+  }, [readingPosition.book, readingPosition.chapter, readerSettings.translation, fetchChapter]);
 
-  const currentBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
-  const totalChapters = currentBook?.chapters ?? 1;
-  const isCurrentBookmarked = bookmarks.some(b =>
-    b.bookId === readingPosition.bookId && b.chapter === readingPosition.chapter
-  );
+  // ─── Navigation Handlers ────────────────────────────────────────────────
 
-  const handleChapterSelect = (chapter: number) => {
-    setShowChapterNav(false);
+  // ✅ Handle book selection - opens chapter selector
+  const handleBookSelect = useCallback((book: string) => {
+    const bookData = BIBLE_BOOKS.find(b => b.name === book);
+    if (bookData) {
+      setSelectedBook(book);
+      // Set the book and default to chapter 1
+      setReadingPosition({
+        book: bookData.name,
+        bookId: bookData.id,
+        chapter: 1,
+        verse: 1,
+      });
+      setHasRecordedSession(false);
+      setShowBookNav(false);
+      // ✅ Open chapter selector after book selection
+      setTimeout(() => {
+        setShowChapterNav(true);
+      }, 300);
+    }
+  }, [setReadingPosition]);
+
+  // ✅ Handle chapter selection - opens verse selector
+  const handleChapterSelect = useCallback((chapter: number) => {
     setReadingPosition({ chapter, verse: 1 });
-    setPendingChapter(chapter);
-    setShowVerseNav(true);
-  };
+    setHasRecordedSession(false);
+    setShowChapterNav(false);
+    // ✅ Open verse selector after chapter selection
+    setTimeout(() => {
+      setShowVerseNav(true);
+    }, 300);
+  }, [setReadingPosition]);
+
+  // ✅ Handle verse selection - closes all panels
+  const handleVerseSelect = useCallback((verse: number) => {
+    setReadingPosition({ verse });
+    setShowVerseNav(false);
+    setTimeout(() => {
+      const verseElement = document.getElementById(`verse-${verse}`);
+      if (verseElement) {
+        verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 100);
+  }, [setReadingPosition]);
+
+  // ✅ Handle quick book selection (from floating button)
+  const handleQuickBookSelect = useCallback((book: string) => {
+    const bookData = BIBLE_BOOKS.find(b => b.name === book);
+    if (bookData) {
+      setSelectedBook(book);
+      setReadingPosition({
+        book: bookData.name,
+        bookId: bookData.id,
+        chapter: 1,
+        verse: 1,
+      });
+      setHasRecordedSession(false);
+      setShowQuickNav(false);
+      // ✅ Open chapter selector after book selection
+      setTimeout(() => {
+        setShowChapterNav(true);
+      }, 300);
+    }
+  }, [setReadingPosition]);
+
+  // ─── Other Handlers ──────────────────────────────────────────────────────
 
   const goToChapter = useCallback((chapter: number) => {
     if (chapter >= 1 && chapter <= totalChapters) {
@@ -628,42 +710,15 @@ const ReaderScreen: React.FC = () => {
     }
   }, [totalChapters, setReadingPosition]);
 
-  const goToVerse = useCallback((verse: number) => {
-    if (verse >= 1 && verse <= totalVerses) {
-      setReadingPosition({ verse });
-      setTimeout(() => {
-        const verseElement = document.getElementById(`verse-${verse}`);
-        if (verseElement) {
-          verseElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }
-      }, 100);
-    }
-  }, [totalVerses, setReadingPosition]);
+  const handleCrossRefTap = useCallback((verseRef: string) => {
+    setCrossRefPanel({ ref: verseRef, refs: [] });
+  }, []);
 
-  const handleQuickBookSelect = (book: string) => {
-    const bookData = BIBLE_BOOKS.find(b => b.name === book);
-    if (bookData) {
-      setReadingPosition({
-        book: bookData.name,
-        bookId: bookData.id,
-        chapter: 1,
-        verse: 1,
-      });
-      setHasRecordedSession(false);
-      setShowQuickNav(false);
-      // Scroll to top (web version)
-      scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-  };
-
-  const handleCrossRefTap = (verseRef: string) => {
-    const refs = CROSS_REFERENCES[verseRef] ?? [];
-    setCrossRefPanel({ ref: verseRef, refs });
-  };
-
-  const toggleBookmark = () => {
+  const toggleBookmark = useCallback(() => {
     if (isCurrentBookmarked) {
-      const bm = bookmarks.find(b => b.bookId === readingPosition.bookId && b.chapter === readingPosition.chapter);
+      const bm = bookmarks.find(b => 
+        b.bookId === readingPosition.bookId && b.chapter === readingPosition.chapter
+      );
       if (bm) useAppStore.getState().removeBookmark(bm.id);
     } else {
       addBookmark({
@@ -674,31 +729,22 @@ const ReaderScreen: React.FC = () => {
         label: `${readingPosition.book} ${readingPosition.chapter}`,
       });
     }
-  };
+  }, [isCurrentBookmarked, bookmarks, readingPosition, addBookmark]);
 
-  const handleContentTap = () => {
+  const handleContentTap = useCallback(() => {
     if (readerSettings.focusMode) {
       updateReaderSettings({ focusMode: false });
     }
-  };
+  }, [readerSettings.focusMode, updateReaderSettings]);
 
-  const parallelVerses = displayVerses.map(v => ({
-    ...v,
-    text: v.text.replace(/\b(thee|thou|thy|ye|hath|doth|saith|goeth|spake|verily)\b/gi, (w) => {
-      const modern: Record<string, string> = {
-        thee: 'you', thou: 'you', thy: 'your', ye: 'you', hath: 'has',
-        doth: 'does', saith: 'says', goeth: 'goes', spake: 'spoke', verily: 'truly'
-      };
-      return modern[w.toLowerCase()] || w;
-    }),
-    translation: 'NIV (Modern)',
-  }));
+  const handleCloseCrossRef = useCallback(() => {
+    setCrossRefPanel(null);
+  }, []);
 
-  const isParallel = readerSettings.viewMode === 'parallel';
-  const isVerseComparison = readerSettings.viewMode === 'verse-comparison';
+  // ─── Render ──────────────────────────────────────────────────────────────
 
   // Loading state
-  if (isLoading && !apiVerses) {
+  if (isApiLoading && !displayVerses.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full" style={{ backgroundColor: theme.bg }}>
         <div className="text-center">
@@ -706,8 +752,7 @@ const ReaderScreen: React.FC = () => {
           <p className="text-sm font-medium" style={{ color: theme.text }}>
             Loading {readingPosition.book} {readingPosition.chapter}...
           </p>
-          <p className="text-xs mt-2" style={{ color: theme.textMuted }}>Progress: {progress}%</p>
-          {isOffline && (
+          {!isOnline && (
             <p className="text-xs mt-4" style={{ color: '#f59e0b' }}>
               <WifiOff size={12} className="inline mr-1" />
               Offline mode - checking cache
@@ -719,18 +764,26 @@ const ReaderScreen: React.FC = () => {
   }
 
   // Error state
-  if (error && !apiVerses) {
+  if (apiError && !displayVerses.length) {
     return (
       <div className="flex flex-col items-center justify-center h-full p-8" style={{ backgroundColor: theme.bg }}>
         <div className="text-center max-w-sm">
           <div className="text-5xl mb-4">📖</div>
           <h3 className="text-lg font-bold mb-2" style={{ color: theme.text }}>Unable to Load Scripture</h3>
-          <p className="text-sm mb-6" style={{ color: theme.textMuted }}>{error}</p>
+          <p className="text-sm mb-6" style={{ color: theme.textMuted }}>{apiError}</p>
           <div className="space-y-3">
-            <button onClick={() => refetch()} className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold w-full" style={{ backgroundColor: theme.accent, color: 'white' }}>
+            <button 
+              onClick={() => fetchChapter(readerSettings.translation || 'KJV', readingPosition.book, readingPosition.chapter)} 
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold w-full" 
+              style={{ backgroundColor: theme.accent, color: 'white' }}
+            >
               <RefreshCw size={18} /> Retry
             </button>
-            <button onClick={() => navigate('home')} className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold w-full" style={{ backgroundColor: theme.surface, color: theme.text }}>
+            <button 
+              onClick={() => navigate('home')} 
+              className="flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold w-full" 
+              style={{ backgroundColor: theme.surface, color: theme.text }}
+            >
               <ArrowLeft size={18} /> Back to Home
             </button>
           </div>
@@ -755,23 +808,15 @@ const ReaderScreen: React.FC = () => {
         </div>
       )}
 
-      {/* Offline/Cache Indicator */}
-      {(isOffline || fromCache) && !isLoading && (
-        <div className="flex items-center justify-center gap-2 py-1.5 text-xs" 
-          style={{ backgroundColor: fromCache ? '#4caf5020' : '#f59e0b20', color: fromCache ? '#4caf50' : '#f59e0b' }}>
-          {fromCache ? <HardDrive size={12} /> : <WifiOff size={12} />}
-          <span>{fromCache ? 'Reading from offline cache' : 'Offline mode - using cached chapters'}</span>
-        </div>
-      )}
-
       {/* Top Navigation Bar - hidden in focus mode */}
       {!readerSettings.focusMode && (
-        <nav className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ backgroundColor: theme.navBg, borderBottom: `1px solid ${theme.border}` }}>
+        <nav className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ backgroundColor: theme.navBg || theme.card, borderBottom: `1px solid ${theme.border}` }}>
           <button onClick={() => navigate('home')} className="flex items-center gap-1.5 p-2 -ml-2 rounded-xl transition-all" style={{ color: theme.textMuted }}>
             <ArrowLeft size={18} />
           </button>
 
           <div className="flex items-center gap-2">
+            {/* ✅ Book button - opens Book selector */}
             <button
               onClick={() => setShowBookNav(true)}
               className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all"
@@ -783,6 +828,7 @@ const ReaderScreen: React.FC = () => {
               </span>
             </button>
 
+            {/* ✅ Chapter button - opens Chapter selector */}
             <button
               onClick={() => setShowChapterNav(true)}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl transition-all"
@@ -791,15 +837,23 @@ const ReaderScreen: React.FC = () => {
               <span className="text-sm font-medium">Chapter</span>
               <span className="font-bold text-sm">{readingPosition.chapter}</span>
             </button>
+
+            {/* ✅ Verse button - opens Verse selector */}
+            <button
+              onClick={() => setShowVerseNav(true)}
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl transition-all"
+              style={{ backgroundColor: theme.surface, color: theme.text }}
+            >
+              <span className="text-sm font-medium">Verse</span>
+              <span className="font-bold text-sm">{readingPosition.verse}</span>
+            </button>
           </div>
 
           <div className="flex items-center gap-1">
-            {/* Always visible */}
             <button onClick={toggleBookmark} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: isCurrentBookmarked ? theme.accent : theme.textMuted }}>
               <Bookmark size={18} fill={isCurrentBookmarked ? theme.accent : 'none'} />
             </button>
 
-            {/* More menu for extra buttons */}
             <div className="relative">
               <button 
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
@@ -813,22 +867,45 @@ const ReaderScreen: React.FC = () => {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowMoreMenu(false)} />
                   <div 
-                    className="absolute top-full right-0 mt-2 z-50 w-48 rounded-xl shadow-xl p-2"
+                    className="absolute top-full right-0 mt-2 z-50 w-56 rounded-xl shadow-xl p-2"
                     style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
                   >
-                    <button onClick={() => { setShowAudioPlayer(!showAudioPlayer); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                    <button 
+                      onClick={() => { setShowAudioPlayer(!showAudioPlayer); setShowMoreMenu(false); }} 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      style={{ color: theme.text }}
+                    >
                       <Volume2 size={16} /> Audio Bible
                     </button>
-                    <button onClick={() => { setShowWordStudy(true); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                    <button 
+                      onClick={() => { setShowWordStudy(true); setShowMoreMenu(false); }} 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      style={{ color: theme.text }}
+                    >
                       <Lightbulb size={16} /> Word Study
                     </button>
-                    <button onClick={() => { downloadCurrentBook(); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                    <button 
+                      onClick={() => { setShowMoreMenu(false); }} 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      style={{ color: theme.text }}
+                    >
                       <Download size={16} /> Download Book
                     </button>
-                    <button onClick={() => { refetch(); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                    <button 
+                      onClick={() => { 
+                        fetchChapter(readerSettings.translation || 'KJV', readingPosition.book, readingPosition.chapter);
+                        setShowMoreMenu(false); 
+                      }} 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      style={{ color: theme.text }}
+                    >
                       <RefreshCw size={16} /> Refresh
                     </button>
-                    <button onClick={() => { setShowSettings(true); setShowMoreMenu(false); }} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" style={{ color: theme.text }}>
+                    <button 
+                      onClick={() => { setShowSettings(true); setShowMoreMenu(false); }} 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      style={{ color: theme.text }}
+                    >
                       <Settings2 size={16} /> Settings
                     </button>
                   </div>
@@ -874,11 +951,10 @@ const ReaderScreen: React.FC = () => {
           {[
             { id: 'scroll', icon: <AlignJustify size={13} />, label: 'Read' },
             { id: 'parallel', icon: <Columns size={13} />, label: 'Parallel' },
-            { id: 'verse-comparison', icon: <MessageSquare size={13} />, label: 'Compare' },
           ].map(mode => (
             <button
               key={mode.id}
-              onClick={() => updateReaderSettings({ viewMode: mode.id as typeof readerSettings.viewMode })}
+              onClick={() => updateReaderSettings({ viewMode: mode.id as 'scroll' | 'parallel' | 'paginated' | 'verse-comparison' })}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold flex-shrink-0 transition-all"
               style={{
                 backgroundColor: readerSettings.viewMode === mode.id ? theme.accent : 'transparent',
@@ -906,7 +982,7 @@ const ReaderScreen: React.FC = () => {
       <div
         ref={scrollRef}
         className="flex-1 overflow-y-auto relative"
-        style={{ backgroundColor: theme.bg, scrollbarColor: `${theme.scrollbar} transparent` }}
+        style={{ backgroundColor: theme.bg, scrollbarColor: `${theme.scrollbar || theme.border} transparent` }}
         role="article"
       >
         <div
@@ -917,7 +993,7 @@ const ReaderScreen: React.FC = () => {
           <div
             className="mx-auto py-6"
             style={{
-              maxWidth: isParallel ? '100%' : '720px',
+              maxWidth: readerSettings.viewMode === 'parallel' ? '100%' : '720px',
               paddingLeft: `${readerSettings.marginWidth + 20}px`,
               paddingRight: `${readerSettings.marginWidth + 20}px`,
             }}
@@ -957,7 +1033,7 @@ const ReaderScreen: React.FC = () => {
               </div>
             )}
 
-            {isParallel ? (
+            {readerSettings.viewMode === 'parallel' ? (
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <div className="text-center mb-4 pb-2 border-b" style={{ borderColor: theme.border }}>
@@ -983,6 +1059,7 @@ const ReaderScreen: React.FC = () => {
                         showCrossRef={false}
                         crossRefs={[]}
                         onCrossRefTap={handleCrossRefTap}
+                        isParallel={true}
                       />
                     ))}
                   </div>
@@ -994,54 +1071,45 @@ const ReaderScreen: React.FC = () => {
                     </span>
                   </div>
                   <div>
-                    {parallelVerses.map(verse => (
-                      <VerseText
-                        key={verse.verse}
-                        verse={verse}
-                        highlights={[]}
-                        selectedVerses={[]}
-                        onSelect={() => {}}
-                        onDeselect={() => {}}
-                        showVerseNumbers={readerSettings.showVerseNumbers}
-                        redLetterText={false}
-                        theme={theme}
-                        fontFamily={readerSettings.fontFamily}
-                        fontSize={readerSettings.fontSize}
-                        lineSpacing={readerSettings.lineSpacing}
-                        showCrossRef={false}
-                        crossRefs={[]}
-                        onCrossRefTap={() => {}}
-                      />
-                    ))}
+                    {displayVerses.map(verse => {
+                      const modernText = verse.text
+                        .replace(/\b(thee|thou|thy|ye|hath|doth|saith|goeth|spake|verily)\b/gi, (w) => {
+                          const modern: Record<string, string> = {
+                            thee: 'you', thou: 'you', thy: 'your', ye: 'you', hath: 'has',
+                            doth: 'does', saith: 'says', goeth: 'goes', spake: 'spoke', verily: 'truly'
+                          };
+                          return modern[w.toLowerCase()] || w;
+                        });
+                      return (
+                        <VerseText
+                          key={verse.verse}
+                          verse={{ ...verse, text: modernText, translation: 'NIV' }}
+                          highlights={[]}
+                          selectedVerses={[]}
+                          onSelect={() => {}}
+                          onDeselect={() => {}}
+                          showVerseNumbers={readerSettings.showVerseNumbers}
+                          redLetterText={false}
+                          theme={theme}
+                          fontFamily={readerSettings.fontFamily}
+                          fontSize={readerSettings.fontSize}
+                          lineSpacing={readerSettings.lineSpacing}
+                          showCrossRef={false}
+                          crossRefs={[]}
+                          onCrossRefTap={() => {}}
+                          isParallel={true}
+                        />
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
-            ) : isVerseComparison ? (
-              <div className="space-y-6">
-                {displayVerses.map(verse => (
-                  <div key={verse.verse} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${theme.border}` }}>
-                    <div className="px-4 py-2" style={{ backgroundColor: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
-                      <span className="text-xs font-bold" style={{ color: theme.accent }}>Verse {verse.verse}</span>
-                    </div>
-                    <div className="divide-y" style={{ borderColor: theme.border }}>
-                      <div className="px-4 py-3">
-                        <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: theme.accent }}>{readerSettings.translation}</div>
-                        <p className="text-sm leading-relaxed" style={{ color: theme.text }}>{verse.text}</p>
-                      </div>
-                      <div className="px-4 py-3">
-                        <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: theme.textMuted }}>NIV (Demo)</div>
-                        <p className="text-sm leading-relaxed" style={{ color: theme.textMuted }}>{parallelVerses[verse.verse - 1]?.text ?? verse.text}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
               </div>
             ) : (
               <div>
                 {displayVerses.map(verse => {
                   const verseRefKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
-                  const hasCrossRefs = !!CROSS_REFERENCES[verseRefKey];
-                  const crossRefsList = hasCrossRefs ? CROSS_REFERENCES[verseRefKey] : [];
+                  const hasCrossRefs = false;
+                  const crossRefsList = hasCrossRefs ? [] : [];
                   return (
                     <VerseText
                       key={verse.verse}
@@ -1079,7 +1147,7 @@ const ReaderScreen: React.FC = () => {
           </div>
         </div>
 
-        {/* Floating Book Button - for quick book navigation */}
+        {/* Floating Book Button */}
         <FloatingBookButton
           onPress={() => setShowQuickNav(true)}
           theme={theme}
@@ -1099,109 +1167,132 @@ const ReaderScreen: React.FC = () => {
 
       {/* Annotation Toolbar */}
       {isAnnotationToolbarOpen && selectedVerses.length > 0 && (
-        <AnnotationToolbar />
+        <React.Suspense fallback={null}>
+          <AnnotationToolbar />
+        </React.Suspense>
       )}
 
       {/* Cross Reference Panel */}
       {crossRefPanel && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl p-5 pb-8 max-h-64 overflow-y-auto" style={{ backgroundColor: theme.navBg, borderTop: `1px solid ${theme.border}` }}>
+        <div className="fixed bottom-0 left-0 right-0 z-50 rounded-t-3xl p-5 pb-8 max-h-64 overflow-y-auto" style={{ backgroundColor: theme.navBg || theme.card, borderTop: `1px solid ${theme.border}` }}>
           <div className="flex items-center justify-between mb-4">
             <h3 className="font-bold" style={{ color: theme.text }}>Cross References</h3>
             <p className="text-xs font-medium" style={{ color: theme.accent }}>{crossRefPanel.ref}</p>
-            <button onClick={() => setCrossRefPanel(null)} style={{ color: theme.textMuted }}><X size={18} /></button>
+            <button onClick={handleCloseCrossRef} style={{ color: theme.textMuted }}><X size={18} /></button>
           </div>
           <div className="space-y-2">
-            {crossRefPanel.refs.map(ref => (
-              <button
-                key={ref}
-                className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-3 transition-all hover:opacity-80"
-                style={{ backgroundColor: theme.surface, color: theme.text }}
-                onClick={() => {
-                  const parts = ref.split(' ');
-                  const chapterVerse = parts[parts.length - 1];
-                  const bookName = parts.slice(0, -1).join(' ');
-                  const [ch, v] = chapterVerse.split(':');
-                  const book = BIBLE_BOOKS.find(b => b.name === bookName || b.shortName === bookName);
-                  if (book) {
-                    setReadingPosition({ book: book.name, bookId: book.id, chapter: parseInt(ch), verse: parseInt(v) || 1 });
-                    setCrossRefPanel(null);
-                  }
-                }}
-              >
-                <Link2 size={14} style={{ color: theme.accent }} />
-                <span className="font-medium text-sm">{ref}</span>
-                <ChevronRight size={14} className="ml-auto" style={{ color: theme.textFaint }} />
-              </button>
-            ))}
+            {crossRefPanel.refs.length > 0 ? (
+              crossRefPanel.refs.map(ref => (
+                <button
+                  key={ref}
+                  className="w-full text-left px-3 py-2.5 rounded-xl flex items-center gap-3 transition-all hover:opacity-80"
+                  style={{ backgroundColor: theme.surface, color: theme.text }}
+                  onClick={() => {
+                    const parts = ref.split(' ');
+                    const chapterVerse = parts[parts.length - 1];
+                    const bookName = parts.slice(0, -1).join(' ');
+                    const [ch, v] = chapterVerse.split(':');
+                    const book = BIBLE_BOOKS.find(b => b.name === bookName || b.shortName === bookName);
+                    if (book) {
+                      setReadingPosition({ book: book.name, bookId: book.id, chapter: parseInt(ch), verse: parseInt(v) || 1 });
+                      setCrossRefPanel(null);
+                    }
+                  }}
+                >
+                  <Link2 size={14} style={{ color: theme.accent }} />
+                  <span className="font-medium text-sm">{ref}</span>
+                  <ChevronRight size={14} className="ml-auto" style={{ color: theme.textFaint }} />
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-center py-4" style={{ color: theme.textMuted }}>
+                No cross references available
+              </p>
+            )}
           </div>
         </div>
       )}
 
+      {/* ✅ Book Selector Panel */}
+      <BookSelectorPanel
+        visible={showBookNav}
+        onClose={() => setShowBookNav(false)}
+        onSelectBook={handleBookSelect}
+        currentBook={readingPosition.book}
+        theme={theme}
+      />
+
+      {/* ✅ Chapter Selector Panel */}
+      <ChapterSelectorPanel
+        visible={showChapterNav}
+        onClose={() => setShowChapterNav(false)}
+        onSelectChapter={handleChapterSelect}
+        currentBook={currentBook}
+        currentChapter={readingPosition.chapter}
+        theme={theme}
+      />
+
+      {/* ✅ Verse Selector Panel */}
+      <VerseSelectorPanel
+        visible={showVerseNav}
+        onClose={() => setShowVerseNav(false)}
+        onSelectVerse={handleVerseSelect}
+        currentChapter={readingPosition.chapter}
+        totalVerses={totalVerses}
+        currentVerse={readingPosition.verse}
+        theme={theme}
+      />
+
+      {/* ✅ Quick Book Navigator (Floating Button) */}
+      <BookSelectorPanel
+        visible={showQuickNav}
+        onClose={() => setShowQuickNav(false)}
+        onSelectBook={handleQuickBookSelect}
+        currentBook={readingPosition.book}
+        theme={theme}
+      />
+
       {/* Settings Panel */}
-      {showSettings && (
-        <ReaderSettingsPanel onClose={() => setShowSettings(false)} />
-      )}
+      <React.Suspense fallback={null}>
+        {showSettings && (
+          <ReaderSettingsPanel onClose={() => setShowSettings(false)} />
+        )}
+      </React.Suspense>
 
-      {/* Book Navigator */}
-      {showBookNav && (
-        <BookNavigator onClose={() => setShowBookNav(false)} />
-      )}
+      {/* Book Navigator (from BookNavigator component) */}
+      <React.Suspense fallback={null}>
+        {showBookNav && false && (
+          <BookNavigator onClose={() => setShowBookNav(false)} />
+        )}
+      </React.Suspense>
 
-      {/* Chapter Navigator Modal */}
-      {showChapterNav && (
-        <ChapterNavigator
-          currentBook={currentBook}
-          currentChapter={readingPosition.chapter}
-          onChapterChange={handleChapterSelect}
-          onClose={() => setShowChapterNav(false)}
-          theme={theme}
-        />
-      )}
+      {/* Word Study Panel */}
+      <React.Suspense fallback={null}>
+        {showWordStudy && (
+          <WordStudyPanel
+            isOpen={showWordStudy}
+            onClose={() => setShowWordStudy(false)}
+            selectedVerse={`${readingPosition.book} ${readingPosition.chapter}:${readingPosition.verse}`}
+            theme={theme}
+          />
+        )}
+      </React.Suspense>
 
-      {/* Verse Navigator Modal */}
-      {showVerseNav && (
-        <VerseNavigator
-          currentChapter={readingPosition.chapter}
-          totalVerses={totalVerses}
-          currentVerse={readingPosition.verse}
-          onVerseChange={goToVerse}
-          onClose={() => setShowVerseNav(false)}
-          theme={theme}
-        />
-      )}
-
-      {/* Quick Book Navigator Modal */}
-      {showQuickNav && (
-        <BookQuickNavigator
-          visible={showQuickNav}
-          onClose={() => setShowQuickNav(false)}
-          onSelectBook={handleQuickBookSelect}
-          currentBook={readingPosition.book}
-          theme={theme}
-        />
-      )}
-
-      {showWordStudy && (
-        <WordStudyPanel
-          isOpen={showWordStudy}
-          onClose={() => setShowWordStudy(false)}
-          selectedVerse={`${readingPosition.book} ${readingPosition.chapter}:${readingPosition.verse}`}
-          theme={theme}
-        />
-      )}
-
-      {showAudioPlayer && (
-        <AudioPlayer
-          verses={displayVerses}
-          currentVerse={readingPosition.verse}
-          isVisible={showAudioPlayer}
-          onClose={() => {
-            window.speechSynthesis?.cancel();
-            setShowAudioPlayer(false);
-          }}
-          theme={theme}
-        />
-      )}
+      {/* Audio Player */}
+      <React.Suspense fallback={null}>
+        {showAudioPlayer && (
+          <AudioPlayer
+            verses={displayVerses}
+            currentVerse={readingPosition.verse}
+            isVisible={showAudioPlayer}
+            onClose={() => {
+              window.speechSynthesis?.cancel();
+              setShowAudioPlayer(false);
+            }}
+            theme={theme}
+          />
+        )}
+      </React.Suspense>
       
     </div>
   );

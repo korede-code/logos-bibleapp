@@ -1,6 +1,6 @@
 {
   "name": "logos-daily-backend",
-  "version": "1.0.0",
+  "version": "1.0.8",
   "description": "Backend API for Synthesis Bible App",
   "main": "server.js",
   "scripts": {

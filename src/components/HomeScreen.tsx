@@ -9,6 +9,8 @@
  * - Recent highlights and bookmarks
  * - Quick navigation to study tools
  * 
+ * 🔥 FIXED: Verse of the Day updates when date changes
+ * 🔥 FIXED: Proper cache invalidation on new day
  * 🔥 FIXED: Navigation for both card and Read Chapter button
  * 🔥 FIXED: Proper parsing of DAILY_VERSES fallback data
  */
@@ -21,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { DAILY_VERSES, BIBLE_BOOKS } from '../data/bibleData';
-import { format } from 'date-fns';
+import { format, isSameDay, startOfDay, differenceInDays } from 'date-fns';
 import { bibleApi } from '../services/bibleApiClient';
 import ProUpgradeModal from './ProUpgradeModal';
 import { auth } from '../config/firebase';
@@ -46,7 +48,6 @@ const defaultTheme = {
 
 // ✅ Helper function to parse verse reference like "John 3:16"
 const parseVerseReference = (reference: string) => {
-  // Handle formats like "John 3:16" or "Psalms 23:1"
   const match = reference.match(/^([A-Za-z\s]+)\s+(\d+):(\d+)$/);
   if (match) {
     return {
@@ -63,7 +64,16 @@ const findBookId = (bookName: string): number => {
   const book = BIBLE_BOOKS.find(b => 
     b.name.toLowerCase() === bookName.toLowerCase()
   );
-  return book?.id || 43; // Default to John
+  return book?.id || 43;
+};
+
+// ✅ Helper to get today's date string
+const getTodayString = () => format(new Date(), 'yyyy-MM-dd');
+
+// ✅ Helper to check if date has changed
+const hasDateChanged = (storedDate: string | null): boolean => {
+  if (!storedDate) return true;
+  return storedDate !== getTodayString();
 };
 
 const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => {
@@ -76,7 +86,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     isApiLoading,
     apiError,
     fetchRealVerseOfTheDay,
-    isOnline
+    isOnline,
+    verseCache,
+    setVerseCache,
+    getCachedVerse,
+    isVerseCacheValid
   } = useAppStore();
 
   const [greeting, setGreeting] = useState('');
@@ -85,9 +99,11 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
   const [showProModal, setShowProModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [currentDate, setCurrentDate] = useState(getTodayString());
   
   const hasFetchedRef = useRef(false);
   const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const dateCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Check current user
   useEffect(() => {
@@ -97,19 +113,90 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     return () => unsubscribe();
   }, []);
 
+  // ✅ Check for date change every minute
+  useEffect(() => {
+    dateCheckIntervalRef.current = setInterval(() => {
+      const today = getTodayString();
+      if (today !== currentDate) {
+        console.log('📅 Date changed from', currentDate, 'to', today);
+        setCurrentDate(today);
+        
+        // Invalidate cache and fetch new verse
+        const cachedDate = localStorage.getItem('votd_date');
+        if (cachedDate && cachedDate !== today) {
+          console.log('🔄 Date changed, invalidating verse cache');
+          localStorage.removeItem('votd_cached');
+          localStorage.removeItem('votd_timestamp');
+          localStorage.removeItem('votd_date');
+          
+          // Clear state to force refetch
+          useAppStore.setState({ 
+            realVerseOfTheDay: null,
+            verseCache: { verse: null, timestamp: null, date: null }
+          });
+          
+          hasFetchedRef.current = false;
+          
+          // Fetch new verse
+          if (isOnline) {
+            fetchRealVerseOfTheDay();
+          } else {
+            // Use fallback if offline
+            useFallbackVerse();
+          }
+        }
+      }
+    }, 60000); // Check every minute
+
+    return () => {
+      if (dateCheckIntervalRef.current) {
+        clearInterval(dateCheckIntervalRef.current);
+      }
+    };
+  }, [currentDate, isOnline, fetchRealVerseOfTheDay]);
+
   // ✅ Get the current verse to display (API verse or fallback)
   const getCurrentVerse = useCallback(() => {
+    // Check if we have a cached verse for today
+    const cachedVerse = localStorage.getItem('votd_cached');
+    const cachedDate = localStorage.getItem('votd_date');
+    const today = getTodayString();
+    
+    // If we have a cached verse for today, use it
+    if (cachedVerse && cachedDate === today) {
+      try {
+        const verse = JSON.parse(cachedVerse);
+        return {
+          reference: verse.reference,
+          text: verse.text,
+          translation: verse.translation || 'NIV',
+          book: verse.book || extractBookFromReference(verse.reference),
+          chapter: verse.chapter || extractChapterFromReference(verse.reference),
+          verse: verse.verse || extractVerseFromReference(verse.reference),
+          isReal: true,
+          isCached: true
+        };
+      } catch (e) {
+        console.error('Failed to parse cached verse:', e);
+      }
+    }
+
     // If we have a real verse from API, use it
     if (realVerseOfTheDay) {
-      return {
-        reference: realVerseOfTheDay.reference,
-        text: realVerseOfTheDay.text,
-        translation: realVerseOfTheDay.translation || 'NIV',
-        book: realVerseOfTheDay.book || extractBookFromReference(realVerseOfTheDay.reference),
-        chapter: realVerseOfTheDay.chapter || extractChapterFromReference(realVerseOfTheDay.reference),
-        verse: realVerseOfTheDay.verse || extractVerseFromReference(realVerseOfTheDay.reference),
-        isReal: true
-      };
+      // Check if it's from today or a previous day
+      const verseDate = localStorage.getItem('votd_date');
+      if (verseDate === today) {
+        return {
+          reference: realVerseOfTheDay.reference,
+          text: realVerseOfTheDay.text,
+          translation: realVerseOfTheDay.translation || 'NIV',
+          book: realVerseOfTheDay.book || extractBookFromReference(realVerseOfTheDay.reference),
+          chapter: realVerseOfTheDay.chapter || extractChapterFromReference(realVerseOfTheDay.reference),
+          verse: realVerseOfTheDay.verse || extractVerseFromReference(realVerseOfTheDay.reference),
+          isReal: true,
+          isCached: false
+        };
+      }
     }
     
     // Otherwise use DAILY_VERSES as fallback
@@ -125,14 +212,40 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
         book: parsed?.book || 'John',
         chapter: parsed?.chapter || 3,
         verse: parsed?.verse || 16,
-        isReal: false
+        isReal: false,
+        isCached: false
       };
     }
     
     return null;
   }, [realVerseOfTheDay]);
 
-  // ✅ Navigation helper for verse card - FIXED
+  // ✅ Use fallback verse when offline
+  const useFallbackVerse = useCallback(() => {
+    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
+    const fallbackVerse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
+    
+    if (fallbackVerse) {
+      const parsed = parseVerseReference(fallbackVerse.reference);
+      const verseData = {
+        reference: fallbackVerse.reference,
+        text: fallbackVerse.text,
+        translation: fallbackVerse.translation || 'KJV',
+        book: parsed?.book || 'John',
+        chapter: parsed?.chapter || 3,
+        verse: parsed?.verse || 16
+      };
+      
+      // Cache it
+      localStorage.setItem('votd_cached', JSON.stringify(verseData));
+      localStorage.setItem('votd_timestamp', String(Date.now()));
+      localStorage.setItem('votd_date', getTodayString());
+      
+      useAppStore.setState({ realVerseOfTheDay: verseData });
+    }
+  }, []);
+
+  // ✅ Navigation helper for verse card
   const navigateToVerse = useCallback((verse: any, goToChapter: boolean = false) => {
     if (!verse) {
       console.error('❌ No verse data to navigate to');
@@ -140,25 +253,15 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     }
     
     console.log(`📖 Navigating to ${goToChapter ? 'chapter' : 'verse'}:`, verse.reference);
-    console.log('📖 Verse data:', verse);
     
-    // ✅ Find the book in BIBLE_BOOKS
+    // Find the book in BIBLE_BOOKS
     let bookData = BIBLE_BOOKS.find(b => 
       b.name.toLowerCase() === verse.book.toLowerCase()
     );
     
-    // ✅ If not found, try partial match
     if (!bookData) {
       bookData = BIBLE_BOOKS.find(b => 
         verse.reference.toLowerCase().includes(b.name.toLowerCase())
-      );
-    }
-    
-    // ✅ If still not found, try to find by abbreviation
-    if (!bookData) {
-      bookData = BIBLE_BOOKS.find(b => 
-        verse.book.toLowerCase().includes(b.name.toLowerCase()) ||
-        b.name.toLowerCase().includes(verse.book.toLowerCase())
       );
     }
     
@@ -173,9 +276,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       navigate('reader');
     } else {
       console.error('❌ Book not found for:', verse.book);
-      console.log('📚 Available books:', BIBLE_BOOKS.map(b => b.name));
-      
-      // ✅ Fallback: try to navigate anyway using the verse book name
       setReadingPosition({ 
         book: verse.book, 
         bookId: findBookId(verse.book),
@@ -186,20 +286,34 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     }
   }, [setReadingPosition, navigate]);
 
-  // ✅ Optimized fetch with caching
+  // ✅ Optimized fetch with date-based caching
   useEffect(() => {
-    // Check if we already have a verse cached
+    const today = getTodayString();
+    const cachedDate = localStorage.getItem('votd_date');
     const cachedVerse = localStorage.getItem('votd_cached');
     const cachedTimestamp = localStorage.getItem('votd_timestamp');
     const now = Date.now();
     const cacheAge = cachedTimestamp ? now - parseInt(cachedTimestamp) : Infinity;
     const cacheValid = cacheAge < 3600000; // 1 hour cache
 
-    // If we have a valid cached verse and no real verse loaded, use it immediately
-    if (cachedVerse && cacheValid && !realVerseOfTheDay) {
+    // Check if date has changed
+    const dateChanged = cachedDate !== today;
+
+    // If date changed, clear old cache
+    if (dateChanged) {
+      console.log('📅 Date changed, clearing old cache');
+      localStorage.removeItem('votd_cached');
+      localStorage.removeItem('votd_timestamp');
+      localStorage.removeItem('votd_date');
+      useAppStore.setState({ realVerseOfTheDay: null });
+      hasFetchedRef.current = false;
+    }
+
+    // If we have a valid cached verse for today, use it immediately
+    if (cachedVerse && cachedDate === today && cacheValid && !realVerseOfTheDay) {
       try {
         const verse = JSON.parse(cachedVerse);
-        console.log('📦 Using cached verse:', verse.reference);
+        console.log('📦 Using cached verse for today:', verse.reference);
         useAppStore.setState({ realVerseOfTheDay: verse, isApiLoading: false });
         setIsInitialLoad(false);
         return;
@@ -213,20 +327,29 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       hasFetchedRef.current = true;
       
       const fetchVerse = () => {
-        console.log('🔄 Fetching verse of the day...');
-        fetchRealVerseOfTheDay()
-          .then(() => {
-            setIsInitialLoad(false);
-            const verse = useAppStore.getState().realVerseOfTheDay;
-            if (verse) {
-              localStorage.setItem('votd_cached', JSON.stringify(verse));
-              localStorage.setItem('votd_timestamp', String(Date.now()));
-            }
-          })
-          .catch((error) => {
-            console.error('Failed to fetch verse:', error);
-            setIsInitialLoad(false);
-          });
+        if (isOnline) {
+          console.log('🔄 Fetching verse of the day...');
+          fetchRealVerseOfTheDay()
+            .then(() => {
+              setIsInitialLoad(false);
+              const verse = useAppStore.getState().realVerseOfTheDay;
+              if (verse) {
+                localStorage.setItem('votd_cached', JSON.stringify(verse));
+                localStorage.setItem('votd_timestamp', String(Date.now()));
+                localStorage.setItem('votd_date', today);
+              }
+            })
+            .catch((error) => {
+              console.error('Failed to fetch verse:', error);
+              // Use fallback if online fetch fails
+              useFallbackVerse();
+              setIsInitialLoad(false);
+            });
+        } else {
+          // Use fallback offline
+          useFallbackVerse();
+          setIsInitialLoad(false);
+        }
       };
 
       if ('requestIdleCallback' in window) {
@@ -243,7 +366,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
         clearTimeout(fetchTimeoutRef.current);
       }
     };
-  }, [fetchRealVerseOfTheDay, isApiLoading, realVerseOfTheDay]);
+  }, [fetchRealVerseOfTheDay, isApiLoading, realVerseOfTheDay, isOnline, useFallbackVerse]);
 
   // ✅ Handle manual refresh
   const handleRefresh = useCallback(async () => {
@@ -259,7 +382,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     try {
       localStorage.removeItem('votd_cached');
       localStorage.removeItem('votd_timestamp');
-      localStorage.removeItem('votd_random');
+      localStorage.removeItem('votd_date');
       
       useAppStore.setState({ isApiLoading: true });
       
@@ -283,8 +406,10 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           apiError: null
         });
         
+        const today = getTodayString();
         localStorage.setItem('votd_cached', JSON.stringify(verseData));
         localStorage.setItem('votd_timestamp', String(Date.now()));
+        localStorage.setItem('votd_date', today);
         
         console.log('✅ New verse loaded:', verseData.reference);
         showToast(`✨ New verse: ${verseData.reference}`, 'success');
@@ -298,10 +423,13 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
         isApiLoading: false
       });
       showToast('Failed to refresh verse. Please try again.', 'error');
+      
+      // Use fallback if refresh fails
+      useFallbackVerse();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, isApiLoading]);
+  }, [refreshing, isApiLoading, useFallbackVerse]);
 
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const colors = {
@@ -317,6 +445,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       background: ${colors[type]}; color: white; padding: 10px 20px;
       border-radius: 10px; z-index: 1000; font-size: 14px;
       animation: fadeInUp 0.3s ease; max-width: 90%; text-align: center;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
     `;
     document.body.appendChild(toast);
     setTimeout(() => {
@@ -335,6 +464,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     }
   };
 
+  // Update greeting based on time
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) {
@@ -480,11 +610,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           </div>
         </div>
 
-        {/* ✅ Daily Verse - FIXED with proper navigation */}
+        {/* ✅ Daily Verse - FIXED with date change detection */}
         <section aria-label="Daily Verse">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: theme.textMuted }}>✦ Verse of the Day</h2>
-            <span className="text-xs font-medium" style={{ color: theme.textMuted }}>{format(new Date(), 'MMMM d')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color: theme.textMuted }}>
+                {format(new Date(), 'MMMM d, yyyy')}
+              </span>
+              {currentVerse?.isCached && (
+                <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: theme.surface, color: theme.textFaint }}>
+                  📦 Cached
+                </span>
+              )}
+            </div>
           </div>
           
           {shouldShowLoading ? (
@@ -671,7 +810,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             <div className="flex items-start gap-3">
               <div className="text-3xl">⭐</div>
               <div className="flex-1">
-                <h3 className="font-bold text-white text-base mb-1">Unlock Logos Pro</h3>
+                <h3 className="font-bold text-white text-base mb-1">Unlock Synthesis Pro</h3>
                 <p className="text-sm text-white opacity-80 mb-3">
                   Unlimited highlights, all reading plans, verse image creator, and more.
                 </p>

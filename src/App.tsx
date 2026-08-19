@@ -1,9 +1,11 @@
 // src/App.tsx
 import React, { useEffect, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
-import { App } from '@capacitor/app';
+import { App as CapacitorApp } from '@capacitor/app';
 import { useAppStore } from './store/appStore';
 import { onAuthChange } from './config/firebase';
+
+// ✅ UNCOMMENT ALL THESE IMPORTS
 import HomeScreen from './components/HomeScreen';
 import ReaderScreen from './components/ReaderScreen';
 import SearchScreen from './components/SearchScreen';
@@ -15,17 +17,36 @@ import BookmarksScreen from './components/BookmarksScreen';
 import GroupsScreen from './components/GroupsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import BottomNav from './components/BottomNav';
+
 import { getTheme } from './utils/themeUtils';
 import { NotificationService } from './services/NotificationService';
 import HighlightsScreen from './components/HighlightsScreen';
 
+// ✅ Debug logs to verify imports (remove after confirming)
+console.log('✅ HomeScreen:', HomeScreen);
+console.log('✅ ReaderScreen:', ReaderScreen);
+console.log('✅ BottomNav:', BottomNav);
+
+type AppScreen =
+  | 'home'
+  | 'reader'
+  | 'search'
+  | 'plans'
+  | 'notes'
+  | 'prayer'
+  | 'progress'
+  | 'bookmarks'
+  | 'groups'
+  | 'settings'
+  | 'highlights';
+
 interface ScreenProps {
   theme: any;
   onClose: () => void;
-  navigate: (screen: string) => void;
+  navigate: (screen: AppScreen) => void;
 }
 
-const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
+const SCREENS: Record<AppScreen, React.ComponentType<ScreenProps>> = {
   home: HomeScreen,
   reader: ReaderScreen,
   search: SearchScreen,
@@ -40,8 +61,12 @@ const SCREENS: Record<string, React.ComponentType<ScreenProps>> = {
 };
 
 const App: React.FC = () => {
+  console.log('🚀 App component rendering...');
+
   const { currentScreen, readerSettings, setCurrentUser, setProStatus, navigate } = useAppStore();
   const theme = getTheme(readerSettings.theme);
+
+  console.log('📱 Current screen:', currentScreen);
 
   // 🔥 Capacitor listeners 
   useEffect(() => {
@@ -50,20 +75,18 @@ const App: React.FC = () => {
       return;
     }
 
-    if (!App || typeof App.addListener !== 'function') {
+    if (!CapacitorApp || typeof CapacitorApp.addListener !== 'function') {
       console.error('❌ App plugin not available');
       return;
     }
 
     console.log('📱 Registering Capacitor listeners');
 
-    // ✅ Keep only necessary listeners for future use
     const urlHandler = async (data: { url: string }) => {
       console.log('🔗 Deep link opened:', data.url);
-      // Handle any deep links if needed (e.g., Google Play purchase verification)
     };
 
-    const urlListener = App.addListener('appUrlOpen', urlHandler);
+    const urlListener = CapacitorApp.addListener('appUrlOpen', urlHandler);
     console.log('✅ appUrlOpen listener registered');
 
     return () => {
@@ -73,13 +96,12 @@ const App: React.FC = () => {
     };
   }, [navigate, setProStatus]);
 
-  // 🔥 Auth listener - Complete merged version
+  // 🔥 Auth listener
   useEffect(() => {
     const unsubscribe = onAuthChange(async (user) => {
       console.log('App: Auth state changed', user?.email);
     
       if (user) {
-        // ✅ Store user in a persistent way
         const userData = {
           uid: user.uid,
           email: user.email,
@@ -88,13 +110,9 @@ const App: React.FC = () => {
         };
         
         localStorage.setItem('logos_user', JSON.stringify(userData));
-        // ✅ Also store the UID separately for easy access
         localStorage.setItem('currentUserId', user.uid);
-        
-        // ✅ Set in store
         setCurrentUser(userData);
         
-        // ✅ Check localStorage for Pro status
         const savedPro = localStorage.getItem(`isPro_${user.uid}`);
         console.log('📝 Saved Pro from localStorage:', savedPro);
 
@@ -103,7 +121,6 @@ const App: React.FC = () => {
           console.log('✅ Pro set from localStorage');
         }
         
-        // ✅ Check backend for Pro status
         try {
           console.log('🔍 Checking backend Pro status for:', user.uid);
           const controller = new AbortController();
@@ -123,37 +140,32 @@ const App: React.FC = () => {
             localStorage.setItem(`isPro_${user.uid}`, 'true');
             localStorage.setItem('logos_daily_pro', 'true');
             console.log('✅ Pro set from backend');
-          } else {
-            // ✅ If backend says not Pro but we have localStorage, sync it
-            if (savedPro === 'true') {
-              console.log('🔄 Syncing local Pro status to backend...');
-              try {
-                await fetch(
-                  'https://logos-daily-backend.onrender.com/api/payments/sync-revenuecat',
-                  {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      userId: user.uid,
-                      isPro: true,
-                      source: 'local_storage'
-                    })
-                  }
-                );
-                console.log('✅ Synced Pro status to backend');
-              } catch (syncError) {
-                console.error('❌ Failed to sync Pro status:', syncError);
-              }
+          } else if (savedPro === 'true') {
+            console.log('🔄 Syncing local Pro status to backend...');
+            try {
+              await fetch(
+                'https://logos-daily-backend.onrender.com/api/payments/sync-revenuecat',
+                {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    userId: user.uid,
+                    isPro: true,
+                    source: 'local_storage'
+                  })
+                }
+              );
+              console.log('✅ Synced Pro status to backend');
+            } catch (syncError) {
+              console.error('❌ Failed to sync Pro status:', syncError);
             }
           }
         } catch (e) {
           console.log('Backend check skipped (timeout or offline)');
         }
       } else {
-        // ✅ Clear user data on sign out
         localStorage.removeItem('currentUserId');
         localStorage.removeItem('logos_user');
-        // Don't remove Pro status as it's tied to the user
         console.log('👤 User signed out, cleared session data');
       }
     });
@@ -196,7 +208,43 @@ const App: React.FC = () => {
     NotificationService.init();
   }, []);
 
+  // ✅ Check if ActiveScreen is defined
   const ActiveScreen = SCREENS[currentScreen] ?? HomeScreen;
+  
+  // ✅ Log if ActiveScreen is undefined
+  if (!ActiveScreen) {
+    console.error('❌ ActiveScreen is undefined for screen:', currentScreen);
+    return (
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'center', 
+        alignItems: 'center', 
+        height: '100vh',
+        backgroundColor: theme.bg,
+        color: theme.text
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <h2>⚠️ Screen Not Found</h2>
+          <p style={{ color: theme.textMuted }}>The screen "{currentScreen}" could not be loaded.</p>
+          <button 
+            onClick={() => navigate('home')}
+            style={{
+              marginTop: '16px',
+              padding: '10px 24px',
+              backgroundColor: theme.accent,
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer'
+            }}
+          >
+            Go Home
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const hideNav = readerSettings.focusMode && currentScreen === 'reader';
 
   const screenProps = {
