@@ -7,6 +7,7 @@ const { google } = require('googleapis');
 const axios = require('axios');
 
 const singleChapterBooks = require('./data/single-chapter-books.json');
+const BibleService = require('./services/BibleService');
 
 // Try to load Firebase, but continue if it fails
 let db = null;
@@ -366,26 +367,12 @@ app.get('/api/google-play/test', async (req, res) => {
 
 
 // ============ SUPPORTED TRANSLATIONS ============
+// Get available translations
 app.get('/api/bible/translations', (req, res) => {
   console.log('📚 Translations endpoint called');
-  
-  const translations = [
-    { code: 'KJV', name: 'King James Version', description: 'The classic 1611 English translation', publicDomain: true, requiresPro: false },
-    { code: 'ASV', name: 'American Standard Version', description: 'Early 20th-century revision of the KJV', publicDomain: true, requiresPro: false },
-    { code: 'WEB', name: 'World English Bible', description: 'Modern English public domain translation', publicDomain: true, requiresPro: false },
-    { code: 'YLT', name: "Young's Literal Translation", description: 'Very literal word-for-word translation', publicDomain: true, requiresPro: false },
-    { code: 'BBE', name: 'Bible in Basic English', description: 'Simple English using 1000 basic words', publicDomain: true, requiresPro: false },
-    { code: 'DARBY', name: 'Darby Translation', description: 'Literal translation by John Nelson Darby', publicDomain: true, requiresPro: false },
-    { code: 'NIV', name: 'New International Version', description: 'Most popular modern English translation', publicDomain: false, requiresPro: true },
-    { code: 'NLT', name: 'New Living Translation', description: 'Easy-to-read modern translation', publicDomain: false, requiresPro: true },
-    { code: 'ESV', name: 'English Standard Version', description: 'Essentially literal translation for study', publicDomain: false, requiresPro: true },
-    { code: 'NASB', name: 'New American Standard Bible', description: 'Highly literal modern translation', publicDomain: false, requiresPro: true },
-    { code: 'CSB', name: 'Christian Standard Bible', description: 'Optimal equivalence translation', publicDomain: false, requiresPro: true },
-    { code: 'NKJV', name: 'New King James Version', description: 'Modern update of the KJV', publicDomain: false, requiresPro: true },
-  ];
-  
-  res.json({ 
-    success: true, 
+  const translations = BibleService.getAvailableTranslations();
+  res.json({
+    success: true,
     translations,
     count: translations.length,
     timestamp: new Date().toISOString()
@@ -394,181 +381,47 @@ app.get('/api/bible/translations', (req, res) => {
 
 
 // ============ GET CHAPTER ENDPOINT (FIXED - SINGLE ROUTE) ============
-app.get('/api/bible/:translation/:book/:chapter', async (req, res) => {
-  try {
-    const { translation, book, chapter } = req.params;
-    const trans = translation.toLowerCase();
-    const translationUpper = translation.toUpperCase();
-    
-    console.log(`📖 Fetching: ${translationUpper} ${book} ${chapter}`);
-    
-    // ✅ Translation mapping for Bible API
-    const translationMap = {
-      'kjv': 'kjv',
-      'asv': 'asv',
-      'web': 'web',
-      'ylt': 'ylt',
-      'bbe': 'bbe',
-      'darby': 'darby',
-      'niv': 'niv',
-      'nlt': 'nlt',
-      'esv': 'esv',
-      'nasb': 'nasb',
-      'csb': 'csb',
-      'nkjv': 'nkjv'
-    };
-    
-    const apiTranslation = translationMap[trans] || 'kjv';
-    
-    // ✅ Build the API URL correctly
-    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}?translation=${apiTranslation}`;
-    console.log('📡 API URL:', url);
-    
-    // ✅ Fetch from Bible API with timeout
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
-    
-    const response = await fetch(url, { 
-      signal: controller.signal,
-      headers: {
-        'Accept': 'application/json'
-      }
-    });
-    
-    clearTimeout(timeout);
-    
-    if (!response.ok) {
-      throw new Error(`API returned ${response.status}`);
-    }
-    
-    const data = await response.json();
-    console.log('📥 API Response received');
-    
-    if (data.verses && data.verses.length > 0) {
-      const verses = data.verses.map((v) => ({
-        book: v.book_name || book,
-        chapter: parseInt(v.chapter) || parseInt(chapter),
-        verse: parseInt(v.verse),
-        text: v.text || `${book} ${chapter}:${v.verse}`,
-        translation: translationUpper
-      }));
-      
-      console.log(`✅ Success: ${verses.length} verses for ${book} ${chapter} (${translationUpper})`);
-      return res.json({ success: true, data: verses, source: 'api' });
-    } else {
-      throw new Error('No verses found');
-    }
-  } catch (error) {
-    console.error('❌ Bible fetch error:', error.message);
-    
-    // ✅ Return fallback data
-    const { book, chapter, translation } = req.params;
-    const verseCounts = {
-      'Philemon': 25, '2 John': 13, '3 John': 15, 'Jude': 25, 'Obadiah': 21,
-      'John': 21, 'Matthew': 28, 'Mark': 16, 'Luke': 24, 'Acts': 28,
-      'Romans': 16, '1 Corinthians': 16, '2 Corinthians': 13, 'Galatians': 6,
-      'Ephesians': 6, 'Philippians': 4, 'Colossians': 4, '1 Thessalonians': 5,
-      '2 Thessalonians': 3, '1 Timothy': 6, '2 Timothy': 4, 'Titus': 3,
-      'Philemon': 1, 'Hebrews': 13, 'James': 5, '1 Peter': 5, '2 Peter': 3,
-      '1 John': 5, '2 John': 1, '3 John': 1, 'Jude': 1, 'Revelation': 22
-    };
-    
-    // Try to find the correct verse count
-    let maxVerses = verseCounts[book] || 30;
-    
-    // For chapters, try to get from the chapter
-    if (book === 'Psalms') {
-      const psalmChapters = {
-        1: 6, 2: 12, 3: 8, 4: 8, 5: 12, 6: 10, 7: 17, 8: 9, 9: 20, 10: 18,
-        11: 7, 12: 8, 13: 6, 14: 7, 15: 5, 16: 11, 17: 15, 18: 50, 19: 14,
-        20: 9, 21: 13, 22: 31, 23: 6, 24: 10, 25: 22, 26: 12, 27: 14, 28: 9,
-        29: 11, 30: 12, 31: 24, 32: 11, 33: 22, 34: 22, 35: 28, 36: 12, 37: 40,
-        38: 22, 39: 13, 40: 17, 41: 13, 42: 11, 43: 5, 44: 26, 45: 17, 46: 11,
-        47: 9, 48: 14, 49: 20, 50: 23, 51: 19, 52: 9, 53: 6, 54: 7, 55: 23,
-        56: 13, 57: 11, 58: 11, 59: 17, 60: 12, 61: 8, 62: 12, 63: 11, 64: 10,
-        65: 13, 66: 20, 67: 7, 68: 35, 69: 36, 70: 5, 71: 24, 72: 20, 73: 28,
-        74: 23, 75: 10, 76: 12, 77: 20, 78: 72, 79: 13, 80: 19, 81: 16, 82: 8,
-        83: 18, 84: 12, 85: 13, 86: 17, 87: 7, 88: 18, 89: 52, 90: 17, 91: 16,
-        92: 15, 93: 5, 94: 23, 95: 11, 96: 13, 97: 12, 98: 9, 99: 9, 100: 5,
-        101: 8, 102: 28, 103: 22, 104: 35, 105: 45, 106: 48, 107: 43, 108: 13,
-        109: 31, 110: 7, 111: 10, 112: 10, 113: 9, 114: 8, 115: 18, 116: 19,
-        117: 2, 118: 29, 119: 176, 120: 7, 121: 8, 122: 9, 123: 4, 124: 8,
-        125: 5, 126: 6, 127: 5, 128: 6, 129: 8, 130: 8, 131: 3, 132: 18,
-        133: 3, 134: 3, 135: 21, 136: 26, 137: 9, 138: 8, 139: 24, 140: 13,
-        141: 10, 142: 7, 143: 12, 144: 15, 145: 21, 146: 10, 147: 20, 148: 14,
-        149: 9, 150: 6
-      };
-      if (psalmChapters[parseInt(chapter)]) {
-        maxVerses = psalmChapters[parseInt(chapter)];
-      }
-    }
-    
-    const verses = [];
-    for (let i = 1; i <= maxVerses; i++) {
-      verses.push({
-        book: book,
-        chapter: parseInt(chapter),
-        verse: i,
-        text: `${book} ${chapter}:${i}`,
-        translation: translation.toUpperCase()
-      });
-    }
-    
-    console.log(`⚠️ Fallback: ${verses.length} verses for ${book} ${chapter}`);
-    res.json({ success: true, data: verses, source: 'fallback' });
-  }
-});
-
-// ============ GET SINGLE VERSE ============
-app.get('/api/bible/:translation/:book/:chapter/:verse', async (req, res) => {
-  try {
-    const { translation, book, chapter, verse } = req.params;
-    const trans = translation.toLowerCase();
-    const translationUpper = translation.toUpperCase();
-    
-    const translationMap = {
-      'kjv': 'kjv', 'asv': 'asv', 'web': 'web', 'ylt': 'ylt',
-      'bbe': 'bbe', 'darby': 'darby', 'niv': 'niv', 'nlt': 'nlt',
-      'esv': 'esv', 'nasb': 'nasb', 'csb': 'csb', 'nkjv': 'nkjv'
-    };
-    const apiTranslation = translationMap[trans] || 'kjv';
-    
-    const url = `https://bible-api.com/${encodeURIComponent(book)}+${chapter}:${verse}?translation=${apiTranslation}`;
-    console.log('📡 Verse URL:', url);
-    
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`API returned ${response.status}`);
-    
-    const data = await response.json();
-    
-    if (data.text) {
-      res.json({
-        success: true,
-        data: [{
-          book: book,
-          chapter: parseInt(chapter),
-          verse: parseInt(verse),
-          text: data.text,
-          translation: translationUpper
-        }],
-        source: 'api'
-      });
-    } else {
-      throw new Error('Verse not found');
-    }
-  } catch (error) {
-    console.error('❌ Verse fetch error:', error.message);
-    const { book, chapter, verse, translation } = req.params;
+// Get chapter from local Bible
+app.get('/api/bible/:translation/:book/:chapter', (req, res) => {
+  const { translation, book, chapter } = req.params;
+  console.log(`📖 Fetching ${translation} ${book} ${chapter} from local data`);
+  
+  const verses = BibleService.getChapter(translation.toUpperCase(), book, parseInt(chapter));
+  
+  if (verses && verses.length > 0) {
+    console.log(`✅ Found ${verses.length} verses`);
     res.json({
       success: true,
-      data: [{
-        book: book,
-        chapter: parseInt(chapter),
-        verse: parseInt(verse),
-        text: `${book} ${chapter}:${verse}`,
-        translation: translation.toUpperCase()
-      }],
-      source: 'fallback'
+      data: verses,
+      source: 'local',
+      translation: translation.toUpperCase()
+    });
+  } else {
+    console.log(`⚠️ No data found for ${translation} ${book} ${chapter}`);
+    res.status(404).json({
+      success: false,
+      error: `No data found for ${translation} ${book} ${chapter}`
+    });
+  }
+});
+// ============ GET SINGLE VERSE ============
+// Get single verse
+app.get('/api/bible/:translation/:book/:chapter/:verse', (req, res) => {
+  const { translation, book, chapter, verse } = req.params;
+  console.log(`📖 Fetching verse ${translation} ${book} ${chapter}:${verse}`);
+  
+  const verseData = BibleService.getVerse(translation.toUpperCase(), book, parseInt(chapter), parseInt(verse));
+  
+  if (verseData) {
+    res.json({
+      success: true,
+      data: [verseData],
+      source: 'local'
+    });
+  } else {
+    res.status(404).json({
+      success: false,
+      error: 'Verse not found'
     });
   }
 });
@@ -946,31 +799,37 @@ const POPULAR_VERSES = [
   // Add more verses as needed
 ];
 
+// Verse of the Day
 app.get('/api/bible/votd', (req, res) => {
   const isRandom = req.query.random === 'true';
   console.log('📖 VOTD endpoint called, random:', isRandom);
   
-  let selectedVerse;
+  let selected;
+  
   if (isRandom) {
+    // ✅ Random verse from popular list
     const randomIndex = Math.floor(Math.random() * POPULAR_VERSES.length);
-    selectedVerse = POPULAR_VERSES[randomIndex];
-    console.log(`🎲 Random verse: ${selectedVerse.ref}`);
+    selected = POPULAR_VERSES[randomIndex];
+    console.log(`🎲 Random verse: ${selected.ref}`);
   } else {
+    // ✅ Daily verse from popular list (rotates)
     const today = new Date();
     const dayOfYear = Math.floor((today - new Date(today.getFullYear(), 0, 0)) / 86400000);
     const verseIndex = dayOfYear % POPULAR_VERSES.length;
-    selectedVerse = POPULAR_VERSES[verseIndex];
-    console.log(`📅 Daily verse: ${selectedVerse.ref}`);
+    selected = POPULAR_VERSES[verseIndex];
+    console.log(`📅 Daily verse: ${selected.ref}`);
   }
   
-  const [book, ref] = selectedVerse.ref.split(' ');
-  const [chapter, verse] = ref.split(':');
+  // Parse the reference to get book, chapter, verse
+  const parts = selected.ref.split(' ');
+  const book = parts.slice(0, -1).join(' ');
+  const [chapter, verse] = parts[parts.length - 1].split(':');
   
   res.json({
     success: true,
     data: {
-      reference: selectedVerse.ref,
-      text: selectedVerse.text,
+      reference: selected.ref,
+      text: selected.text,
       translation: 'KJV',
       book: book,
       chapter: parseInt(chapter),
@@ -1017,41 +876,24 @@ try {
 }
 
 // ============ SEARCH FULL BIBLE (LOCAL) ============
-app.get('/api/bible/search', async (req, res) => {
-  const { q, translation = 'kjv' } = req.query;
+// Search Bible
+app.get('/api/bible/search', (req, res) => {
+  const { q, translation = 'KJV' } = req.query;
   
-  if (!q || q.toString().trim().length < 2) {
+  if (!q || q.trim().length < 2) {
     return res.json({ success: false, results: [], count: 0 });
   }
   
-  const searchTerm = q.toString().trim().toLowerCase();
-  const results = [];
+  console.log(`🔍 Searching ${translation} for: "${q}"`);
+  const results = BibleService.search(translation.toUpperCase(), q.trim());
   
-  // Search through the ENTIRE local Bible
-  for (const [book, chapters] of Object.entries(BIBLE)) {
-    for (const [chapter, verses] of Object.entries(chapters)) {
-      for (const [verse, text] of Object.entries(verses)) {
-        if (text.toLowerCase().includes(searchTerm)) {
-          results.push({
-            reference: `${book} ${chapter}:${verse}`,
-            text: text,
-            book: book,
-            chapter: parseInt(chapter),
-            verse: parseInt(verse),
-            translation: translation.toUpperCase()
-          });
-          
-          // Limit to 100 results
-          if (results.length >= 100) break;
-        }
-      }
-      if (results.length >= 100) break;
-    }
-    if (results.length >= 100) break;
-  }
-  
-  console.log(`✅ Found ${results.length} results for "${searchTerm}"`);
-  res.json({ success: true, query: searchTerm, results, count: results.length });
+  res.json({
+    success: true,
+    query: q,
+    results: results,
+    count: results.length,
+    translation: translation.toUpperCase()
+  });
 });
 
 // ============ START SERVER ============
