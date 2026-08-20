@@ -230,97 +230,34 @@ class BibleApiClient {
     }
   }
 
-  /**
-   * Get a Bible chapter - uses local KJV first
-   */
-  async getChapter(
-    translation: string, 
-    book: string, 
-    chapter: number
-  ): Promise<BibleApiResponse> {
-    // ✅ For KJV, use local file (instant)
-    if (translation === 'KJV' || translation === 'kjv') {
-      const localChapter = bibleLocal.getChapter(book, chapter);
-      if (localChapter) {
-        console.log(`📖 Using local KJV chapter: ${book} ${chapter} (${localChapter.verses.length} verses)`);
-        return {
-          success: true,
-          data: localChapter.verses.map(v => ({
-            book: v.book,
-            chapter: v.chapter,
-            verse: v.verse,
-            text: v.text,
-          })),
-          translation: 'KJV',
-          source: 'local'
-        };
-      }
-    }
-
-    // For other translations or if not found locally, use API
+  // Update the getChapter method to use your local backend
+  async getChapter(translation: string, book: string, chapter: number) {
     try {
-      const endpoint = `/bible/${translation}/${book}/${chapter}`;
-      console.log(`📡 Fetching from API: ${endpoint}`);
-      const response = await this.request<BibleApiResponse>(endpoint);
-      return {
-        ...response,
-        source: 'api'
-      };
+      const endpoint = `/api/bible/${translation}/${book}/${chapter}`;
+      console.log(`📡 Fetching chapter: ${endpoint}`);
+      const response = await this.request(endpoint);
+      return response;
     } catch (error) {
       console.error('Failed to fetch chapter:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to fetch chapter' 
-      };
+      return { success: false, error: 'Failed to fetch chapter' };
     }
   }
 
-  /**
-   * Get a specific verse - uses local KJV first
-   */
-  async getVerse(
-    translation: string, 
-    book: string, 
-    chapter: number, 
-    verse: number
-  ): Promise<BibleApiResponse> {
-    if (translation === 'KJV' || translation === 'kjv') {
-      const localVerse = bibleLocal.getVerse(book, chapter, verse);
-      if (localVerse) {
-        return {
-          success: true,
-          data: [{
-            book: localVerse.book,
-            chapter: localVerse.chapter,
-            verse: localVerse.verse,
-            text: localVerse.text,
-          }],
-          translation: 'KJV',
-          source: 'local'
-        };
-      }
-    }
-    
+  // Update translations endpoint
+  async getTranslations(): Promise<BibleApiResponse> {
     try {
-      const endpoint = `/bible/${translation}/${book}/${chapter}/${verse}`;
-      console.log(`📡 Fetching verse from API: ${endpoint}`);
-      const response = await this.request<BibleApiResponse>(endpoint);
-      return {
-        ...response,
-        source: 'api'
-      };
+      const response = await this.request<BibleApiResponse>('/bible/translations');
+      return response;
     } catch (error) {
-      console.error('Failed to fetch verse:', error);
-      return { 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Failed to fetch verse' 
+      console.error('Failed to fetch translations:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }
 
-  /**
-   * Get multiple verses at once
-   */
+   //Get multiple verses at once 
   async getVerses(
     translation: string,
     verses: Array<{ book: string; chapter: number; verse: number }>

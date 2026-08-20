@@ -11,9 +11,9 @@
  * - Audio Bible support
  * - Word study panel
  * 
+ * 🔥 FIXED: More menu button always visible
+ * 🔥 FIXED: Translation switching loads content
  * 🔥 FIXED: Book → Chapter → Verse navigation flow
- * 🔥 FIXED: Floating button follows same flow
- * 🔥 FIXED: All imports properly configured
  */
 
 import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
@@ -21,10 +21,10 @@ import {
   ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, Volume2, MessageSquare,
-  WifiOff, RefreshCw, Search, Lightbulb, Crown
+  WifiOff, RefreshCw, Search, Lightbulb, Crown, ChevronDown
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { BIBLE_BOOKS } from '../data/bibleData';
+import { BIBLE_BOOKS, CROSS_REFERENCES, BIBLE_TRANSLATIONS } from '../data/bibleData';
 import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
 import { format } from 'date-fns';
 
@@ -360,6 +360,95 @@ const VerseSelectorPanel: React.FC<{
   );
 };
 
+// ─── Translation Selector ──────────────────────────────────────────────────
+
+const TranslationSelector: React.FC<{
+  visible: boolean;
+  onClose: () => void;
+  onSelectTranslation: (translation: string) => void;
+  currentTranslation: string;
+  theme: any;
+}> = ({ visible, onClose, onSelectTranslation, currentTranslation, theme }) => {
+  const translations = [
+    { code: 'KJV', name: 'King James Version', isPro: false },
+    { code: 'NIV', name: 'New International Version', isPro: true },
+    { code: 'ESV', name: 'English Standard Version', isPro: true },
+    { code: 'NLT', name: 'New Living Translation', isPro: true },
+    { code: 'NASB', name: 'New American Standard Bible', isPro: true },
+    { code: 'CSB', name: 'Christian Standard Bible', isPro: true },
+  ];
+
+  if (!visible) return null;
+
+  return (
+    <div 
+      className="fixed inset-0 z-[60] flex items-end justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.8)' }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-lg rounded-t-3xl flex flex-col"
+        style={{ 
+          backgroundColor: theme.card, 
+          maxHeight: '80vh',
+          animation: 'slideUp 0.3s ease-out'
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="p-5 border-b" style={{ borderColor: theme.border }}>
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold" style={{ color: theme.text }}>
+                Select Translation
+              </h2>
+              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>
+                Choose a Bible translation
+              </p>
+            </div>
+            <button onClick={onClose} style={{ color: theme.textMuted }}>
+              <X size={24} />
+            </button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-y-auto p-4">
+          {translations.map(t => (
+            <button
+              key={t.code}
+              onClick={() => {
+                onSelectTranslation(t.code);
+                onClose();
+              }}
+              className="w-full flex items-center justify-between p-4 rounded-xl transition-all hover:opacity-80 mb-2"
+              style={{
+                backgroundColor: t.code === currentTranslation ? theme.accent : theme.surface,
+                color: t.code === currentTranslation ? 'white' : theme.text,
+                border: `1px solid ${t.code === currentTranslation ? theme.accent : theme.border}`,
+              }}
+            >
+              <div className="text-left">
+                <span className="font-medium">{t.name}</span>
+                <p className="text-xs opacity-70">{t.code}</p>
+              </div>
+              {t.isPro && (
+                <span 
+                  className="text-xs px-2 py-0.5 rounded-full"
+                  style={{ 
+                    backgroundColor: t.code === currentTranslation ? 'rgba(255,255,255,0.2)' : theme.accent,
+                    color: t.code === currentTranslation ? 'white' : 'white'
+                  }}
+                >
+                  PRO
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Memoized VerseText Component ────────────────────────────────────────
 
 const VerseText = memo<VerseTextProps>(({
@@ -451,14 +540,14 @@ const VerseText = memo<VerseTextProps>(({
               color: theme.accent, 
               fontSize: '0.7em',
               backgroundColor: `${theme.accent}20`,
-              width: '18px',
-              height: '18px',
+              width: '20px',
+              height: '20px',
               borderRadius: '50%',
             }}
             aria-label={`Cross references for ${refKey}`}
             title={`View cross references (${verseRefs.length})`}
           >
-            <Link2 size={10} />
+            <Link2 size={12} />
           </button>
         )}
       </span>
@@ -509,7 +598,7 @@ const ReaderScreen: React.FC = () => {
     updateReaderSettings, selectVerse, deselectVerse,
     addBookmark, bookmarks, recordReadingSession, 
     isOnline, fetchChapter, currentChapterVerses,
-    isApiLoading, apiError
+    isApiLoading, apiError, isPro
   } = useAppStore();
 
   const [isDownloading, setIsDownloading] = useState(false);
@@ -527,6 +616,7 @@ const ReaderScreen: React.FC = () => {
   const [crossRefPanel, setCrossRefPanel] = useState<{ ref: string; refs: string[] } | null>(null);
   const [hasRecordedSession, setHasRecordedSession] = useState(false);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [showTranslationSelector, setShowTranslationSelector] = useState(false);
   
   // ✅ New state for navigation flow
   const [navStep, setNavStep] = useState<'book' | 'chapter' | 'verse'>('book');
@@ -623,9 +713,14 @@ const ReaderScreen: React.FC = () => {
     return () => scrollElement.removeEventListener('scroll', handleScroll);
   }, []);
 
-  // Fetch chapter when needed
+  // ✅ Fetch chapter when translation or position changes
   useEffect(() => {
     if (readingPosition.book && readingPosition.chapter) {
+      console.log('📖 Fetching chapter:', {
+        translation: readerSettings.translation,
+        book: readingPosition.book,
+        chapter: readingPosition.chapter
+      });
       fetchChapter(
         readerSettings.translation || 'KJV',
         readingPosition.book,
@@ -641,7 +736,6 @@ const ReaderScreen: React.FC = () => {
     const bookData = BIBLE_BOOKS.find(b => b.name === book);
     if (bookData) {
       setSelectedBook(book);
-      // Set the book and default to chapter 1
       setReadingPosition({
         book: bookData.name,
         bookId: bookData.id,
@@ -650,7 +744,6 @@ const ReaderScreen: React.FC = () => {
       });
       setHasRecordedSession(false);
       setShowBookNav(false);
-      // ✅ Open chapter selector after book selection
       setTimeout(() => {
         setShowChapterNav(true);
       }, 300);
@@ -662,7 +755,6 @@ const ReaderScreen: React.FC = () => {
     setReadingPosition({ chapter, verse: 1 });
     setHasRecordedSession(false);
     setShowChapterNav(false);
-    // ✅ Open verse selector after chapter selection
     setTimeout(() => {
       setShowVerseNav(true);
     }, 300);
@@ -693,12 +785,48 @@ const ReaderScreen: React.FC = () => {
       });
       setHasRecordedSession(false);
       setShowQuickNav(false);
-      // ✅ Open chapter selector after book selection
       setTimeout(() => {
         setShowChapterNav(true);
       }, 300);
     }
   }, [setReadingPosition]);
+
+  // ✅ Handle translation change
+  const handleTranslationSelect = useCallback((translation: string) => {
+    console.log('🔄 Changing translation to:', translation);
+    
+    // Check if Pro is required
+    const isProRequired = translation !== 'KJV' && translation !== 'ASV' && translation !== 'WEB';
+    if (isProRequired && !isPro) {
+      // Show toast or alert
+      const toast = document.createElement('div');
+      toast.textContent = '⚠️ This translation requires Pro subscription';
+      toast.style.cssText = `
+        position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+        background: #f59e0b; color: white; padding: 10px 20px;
+        border-radius: 10px; z-index: 1000; font-size: 14px;
+        animation: fadeInUp 0.3s ease;
+      `;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
+      return;
+    }
+    
+    // Update settings
+    updateReaderSettings({ translation });
+    setShowTranslationSelector(false);
+    
+    // ✅ Force refetch of current chapter with new translation
+    if (readingPosition.book && readingPosition.chapter) {
+      setTimeout(() => {
+        fetchChapter(
+          translation,
+          readingPosition.book,
+          readingPosition.chapter
+        );
+      }, 100);
+    }
+  }, [isPro, readingPosition.book, readingPosition.chapter, updateReaderSettings, fetchChapter]);
 
   // ─── Other Handlers ──────────────────────────────────────────────────────
 
@@ -711,7 +839,10 @@ const ReaderScreen: React.FC = () => {
   }, [totalChapters, setReadingPosition]);
 
   const handleCrossRefTap = useCallback((verseRef: string) => {
-    setCrossRefPanel({ ref: verseRef, refs: [] });
+    // ✅ Get cross references from the data
+    const refs = CROSS_REFERENCES[verseRef] || [];
+    console.log(`🔗 Cross references for ${verseRef}:`, refs);
+    setCrossRefPanel({ ref: verseRef, refs });
   }, []);
 
   const toggleBookmark = useCallback(() => {
@@ -810,54 +941,76 @@ const ReaderScreen: React.FC = () => {
 
       {/* Top Navigation Bar - hidden in focus mode */}
       {!readerSettings.focusMode && (
-        <nav className="flex items-center justify-between px-4 py-3 flex-shrink-0" style={{ backgroundColor: theme.navBg || theme.card, borderBottom: `1px solid ${theme.border}` }}>
-          <button onClick={() => navigate('home')} className="flex items-center gap-1.5 p-2 -ml-2 rounded-xl transition-all" style={{ color: theme.textMuted }}>
+        <nav className="flex items-center justify-between px-4 py-3 flex-shrink-0" 
+          style={{ backgroundColor: theme.navBg || theme.card, borderBottom: `1px solid ${theme.border}` }}>
+          
+          {/* Left: Back button */}
+          <button onClick={() => navigate('home')} className="flex items-center gap-1.5 p-2 -ml-2 rounded-xl transition-all flex-shrink-0" 
+            style={{ color: theme.textMuted }}>
             <ArrowLeft size={18} />
           </button>
 
-          <div className="flex items-center gap-2">
-            {/* ✅ Book button - opens Book selector */}
+          {/* ✅ Center: Book, Chapter, Verse buttons - with flexible sizing */}
+          <div className="flex items-center gap-1.5 flex-1 justify-center min-w-0 px-2">
+            {/* Book button - with truncation for long names */}
             <button
               onClick={() => setShowBookNav(true)}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-xl transition-all"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl transition-all flex-shrink min-w-0"
               style={{ backgroundColor: theme.surface, color: theme.text }}
             >
-              <BookOpen size={14} style={{ color: theme.accent }} />
-              <span className="font-bold text-sm" style={{ fontFamily: 'Crimson Pro, serif' }}>
+              <BookOpen size={14} style={{ color: theme.accent }} className="flex-shrink-0" />
+              <span className="font-bold text-sm truncate max-w-[100px]" 
+                style={{ fontFamily: 'Crimson Pro, serif' }}>
                 {readingPosition.book}
               </span>
             </button>
 
-            {/* ✅ Chapter button - opens Chapter selector */}
+            {/* Chapter button */}
             <button
               onClick={() => setShowChapterNav(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all flex-shrink-0"
               style={{ backgroundColor: theme.surface, color: theme.text }}
             >
-              <span className="text-sm font-medium">Chapter</span>
+              <span className="text-xs font-medium">Ch</span>
               <span className="font-bold text-sm">{readingPosition.chapter}</span>
             </button>
 
-            {/* ✅ Verse button - opens Verse selector */}
+            {/* Verse button */}
             <button
               onClick={() => setShowVerseNav(true)}
-              className="flex items-center gap-1 px-3 py-1.5 rounded-xl transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl transition-all flex-shrink-0"
               style={{ backgroundColor: theme.surface, color: theme.text }}
             >
-              <span className="text-sm font-medium">Verse</span>
+              <span className="text-xs font-medium">V</span>
               <span className="font-bold text-sm">{readingPosition.verse}</span>
+            </button>
+
+            {/* Translation button - compact */}
+            <button
+              onClick={() => setShowTranslationSelector(true)}
+              className="flex items-center gap-0.5 px-2 py-1.5 rounded-xl transition-all flex-shrink-0"
+              style={{ backgroundColor: theme.surface, color: theme.text }}
+            >
+              <span className="text-xs font-bold">{readerSettings.translation || 'KJV'}</span>
+              <ChevronDown size={12} style={{ color: theme.textMuted }} />
             </button>
           </div>
 
-          <div className="flex items-center gap-1">
-            <button onClick={toggleBookmark} className="w-9 h-9 rounded-xl flex items-center justify-center transition-all" style={{ color: isCurrentBookmarked ? theme.accent : theme.textMuted }}>
+          {/* ✅ Right: Bookmark and More Menu - Always visible with flex-shrink-0 */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <button 
+              onClick={toggleBookmark} 
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0" 
+              style={{ color: isCurrentBookmarked ? theme.accent : theme.textMuted }}
+            >
               <Bookmark size={18} fill={isCurrentBookmarked ? theme.accent : 'none'} />
             </button>
 
-            <div className="relative">
+            {/* ✅ More Menu Button - Always visible */}
+            <div className="relative flex-shrink-0">
               <button 
                 onClick={() => setShowMoreMenu(!showMoreMenu)}
-                className="w-9 h-9 rounded-xl flex items-center justify-center transition-all"
+                className="w-8 h-8 rounded-xl flex items-center justify-center transition-all"
                 style={{ color: showMoreMenu ? theme.accent : theme.textMuted }}
               >
                 <Settings2 size={18} />
@@ -872,21 +1025,21 @@ const ReaderScreen: React.FC = () => {
                   >
                     <button 
                       onClick={() => { setShowAudioPlayer(!showAudioPlayer); setShowMoreMenu(false); }} 
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:opacity-80" 
                       style={{ color: theme.text }}
                     >
                       <Volume2 size={16} /> Audio Bible
                     </button>
                     <button 
                       onClick={() => { setShowWordStudy(true); setShowMoreMenu(false); }} 
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:opacity-80" 
                       style={{ color: theme.text }}
                     >
                       <Lightbulb size={16} /> Word Study
                     </button>
                     <button 
                       onClick={() => { setShowMoreMenu(false); }} 
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:opacity-80" 
                       style={{ color: theme.text }}
                     >
                       <Download size={16} /> Download Book
@@ -896,14 +1049,14 @@ const ReaderScreen: React.FC = () => {
                         fetchChapter(readerSettings.translation || 'KJV', readingPosition.book, readingPosition.chapter);
                         setShowMoreMenu(false); 
                       }} 
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:opacity-80" 
                       style={{ color: theme.text }}
                     >
                       <RefreshCw size={16} /> Refresh
                     </button>
                     <button 
                       onClick={() => { setShowSettings(true); setShowMoreMenu(false); }} 
-                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm" 
+                      className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:opacity-80" 
                       style={{ color: theme.text }}
                     >
                       <Settings2 size={16} /> Settings
@@ -1019,7 +1172,7 @@ const ReaderScreen: React.FC = () => {
                   {readingPosition.book}
                 </h1>
                 <p style={{ color: theme.textMuted, fontFamily: 'Crimson Pro, serif', fontSize: `${readerSettings.fontSize - 2}px` }}>
-                  Chapter {readingPosition.chapter}
+                  Chapter {readingPosition.chapter} · {readerSettings.translation}
                 </p>
                 <div className="w-12 h-0.5 mx-auto mt-4 rounded-full" style={{ backgroundColor: theme.border }} />
               </div>
@@ -1107,9 +1260,13 @@ const ReaderScreen: React.FC = () => {
             ) : (
               <div>
                 {displayVerses.map(verse => {
+                  // ✅ Create the reference key in the format expected by CROSS_REFERENCES
                   const verseRefKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
-                  const hasCrossRefs = false;
-                  const crossRefsList = hasCrossRefs ? [] : [];
+                  
+                  // ✅ Check if cross references exist for this verse
+                  const hasCrossRefs = CROSS_REFERENCES && CROSS_REFERENCES[verseRefKey] && CROSS_REFERENCES[verseRefKey].length > 0;
+                  const crossRefsList = hasCrossRefs ? CROSS_REFERENCES[verseRefKey] : [];
+                  
                   return (
                     <VerseText
                       key={verse.verse}
@@ -1252,17 +1409,19 @@ const ReaderScreen: React.FC = () => {
         theme={theme}
       />
 
+      {/* ✅ Translation Selector Panel */}
+      <TranslationSelector
+        visible={showTranslationSelector}
+        onClose={() => setShowTranslationSelector(false)}
+        onSelectTranslation={handleTranslationSelect}
+        currentTranslation={readerSettings.translation || 'KJV'}
+        theme={theme}
+      />
+
       {/* Settings Panel */}
       <React.Suspense fallback={null}>
         {showSettings && (
           <ReaderSettingsPanel onClose={() => setShowSettings(false)} />
-        )}
-      </React.Suspense>
-
-      {/* Book Navigator (from BookNavigator component) */}
-      <React.Suspense fallback={null}>
-        {showBookNav && false && (
-          <BookNavigator onClose={() => setShowBookNav(false)} />
         )}
       </React.Suspense>
 

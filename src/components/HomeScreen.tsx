@@ -9,6 +9,7 @@
  * - Recent highlights and bookmarks
  * - Quick navigation to study tools
  * 
+ * 🔥 FIXED: Horizontal scrolling prevented
  * 🔥 FIXED: Verse of the Day updates when date changes
  * 🔥 FIXED: Proper cache invalidation on new day
  * 🔥 FIXED: Navigation for both card and Read Chapter button
@@ -506,10 +507,12 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
   const shouldShowVerse = currentVerse;
 
   return (
+    // ✅ FIX: Added overflow-x-hidden to prevent horizontal scrolling
     <div
-      className="h-full overflow-y-auto"
+      className="h-full overflow-y-auto overflow-x-hidden"
       style={{ backgroundColor: theme.bg, color: theme.text }}
     >
+      {/* Header */}
       {/* Header */}
       <div
         className="sticky top-0 z-20 px-5 pt-6 pb-4"
