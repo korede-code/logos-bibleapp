@@ -1,5 +1,5 @@
 /**
- * AnnotationToolbar.tsx - Fixed with working color panel display
+ * AnnotationToolbar.tsx - Fixed with multi-verse image creation
  */
 
 import React, { useState } from 'react';
@@ -36,15 +36,14 @@ const AnnotationToolbar: React.FC = () => {
   const [noteContent, setNoteContent] = useState('');
   const [noteTitle, setNoteTitle] = useState('');
   const [showToast, setShowToast] = useState<string | null>(null);
-  const [selectedVerseForImage, setSelectedVerseForImage] = useState<{ reference: string; text: string } | null>(null);
+  
+  // ✅ Changed to store array of verses
+  const [selectedVersesForImage, setSelectedVersesForImage] = useState<Array<{ reference: string; text: string; book: string; chapter: number; verse: number }>>([]);
 
   const toast = (msg: string) => {
     setShowToast(msg);
     setTimeout(() => setShowToast(null), 2000);
   };
-
-  // Debug log
-  console.log('🟢 AnnotationToolbar rendered, showColorPicker:', showColorPicker);
 
   const getSelectedVersesData = () => {
     if (selectedVerses.length === 0) return null;
@@ -69,14 +68,47 @@ const AnnotationToolbar: React.FC = () => {
     };
   };
 
+  // ✅ Get full verse data including text for image creation
+  const getSelectedVersesWithText = () => {
+    if (selectedVerses.length === 0) return [];
+
+    const verseData = getSelectedVersesData();
+    if (!verseData) return [];
+
+    const result: Array<{ reference: string; text: string; book: string; chapter: number; verse: number }> = [];
+
+    selectedVerses.forEach(verseKey => {
+      const [bookId, chapter, verse] = verseKey.split(':');
+      const book = BIBLE_BOOKS.find(b => b.id === parseInt(bookId));
+      
+      // Get the verse text from the DOM
+      const verseElement = document.getElementById(`verse-${verse}`);
+      let text = '';
+      if (verseElement) {
+        const textSpan = verseElement.querySelector('span[role="button"]');
+        if (textSpan) {
+          text = textSpan.textContent?.trim() || '';
+        }
+      }
+
+      result.push({
+        reference: `${book?.name || ''} ${chapter}:${verse}`,
+        text: text || `${book?.name || ''} ${chapter}:${verse}`,
+        book: book?.name || '',
+        chapter: parseInt(chapter),
+        verse: parseInt(verse),
+      });
+    });
+
+    return result;
+  };
+
   const applyHighlight = (color: HighlightColor, style: 'highlight' | 'underline' = 'highlight') => {
     const verseData = getSelectedVersesData();
     if (!verseData) {
       toast('Please select verses first');
       return;
     }
-
-    console.log('🖍️ Applying highlight:', { color, style, book: verseData.bookName, verses: verseData.verses });
 
     verseData.verses.forEach(verse => {
       const existingHighlight = highlights.find(
@@ -149,12 +181,10 @@ const AnnotationToolbar: React.FC = () => {
       const reference = verseData ? `${verseData.bookName} ${verseData.chapter}` : '';
       const fullText = `${reference}\n\n${texts.join('\n\n')}`;
 
-      // Try clipboard API first
       if (navigator.clipboard && navigator.clipboard.writeText) {
         await navigator.clipboard.writeText(fullText);
         toast('✓ Copied to clipboard');
       } else {
-        // Fallback for older browsers/mobile
         const textarea = document.createElement('textarea');
         textarea.value = fullText;
         textarea.style.position = 'fixed';
@@ -198,7 +228,6 @@ const AnnotationToolbar: React.FC = () => {
     const verseText = texts.join('\n\n');
     const shareText = `${reference}\n\n${verseText}\n\n📖 Shared from Synthesis Bible`;
 
-    // Use Capacitor Share on native - opens WhatsApp, Facebook, SMS, etc
     if (Capacitor.isNativePlatform()) {
       try {
         await Share.share({
@@ -214,7 +243,6 @@ const AnnotationToolbar: React.FC = () => {
       }
     }
 
-    // Web fallback: Try navigator.share
     if (navigator.share) {
       try {
         await navigator.share({
@@ -228,7 +256,6 @@ const AnnotationToolbar: React.FC = () => {
       }
     }
 
-    // Final fallback: Copy to clipboard
     try {
       await navigator.clipboard.writeText(shareText);
       toast('✓ Verse copied to clipboard');
@@ -271,7 +298,19 @@ const AnnotationToolbar: React.FC = () => {
     clearSelectedVerses();
   };
 
-  // Get highlight colors from the utility
+  // ✅ Handle opening image creator with all selected verses
+  const handleOpenImageCreator = () => {
+    const versesWithText = getSelectedVersesWithText();
+    if (versesWithText.length === 0) {
+      toast('Please select verses first');
+      return;
+    }
+    
+    console.log('📸 Opening image creator with verses:', versesWithText);
+    setSelectedVersesForImage(versesWithText);
+    setShowVerseImageCreator(true);
+  };
+
   const highlightColors = Object.entries(HIGHLIGHT_COLORS || {}) as [HighlightColor, { bg: string; border: string; text: string }][];
 
   return (
@@ -297,13 +336,11 @@ const AnnotationToolbar: React.FC = () => {
         {/* Action buttons */}
         <div className="flex items-center gap-2 overflow-x-auto pb-1">
           
-          {/* ===== HIGHLIGHT BUTTON WITH COLOR PICKER ===== */}
+          {/* Highlight button with color picker */}
           <div className="relative">
             <button
               onClick={() => {
-                console.log('🟡 Highlight button clicked, toggling color picker');
                 setShowColorPicker(!showColorPicker);
-                // Close note input if open
                 setShowNoteInput(false);
               }}
               className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
@@ -317,7 +354,7 @@ const AnnotationToolbar: React.FC = () => {
               <span className="text-[11px] font-medium">Highlight</span>
             </button>
 
-            {/* ===== COLOR PICKER PANEL ===== */}
+            {/* Color picker panel */}
             {showColorPicker && (
               <div 
                 className="fixed bottom-24 left-4 right-4 z-50 p-4 rounded-2xl shadow-2xl"
@@ -328,7 +365,6 @@ const AnnotationToolbar: React.FC = () => {
                   margin: '0 auto',
                 }}
               >
-                {/* Close button */}
                 <div className="flex items-center justify-between mb-3">
                   <h4 className="text-sm font-bold" style={{ color: theme.text }}>Choose Highlight Style</h4>
                   <button 
@@ -340,7 +376,6 @@ const AnnotationToolbar: React.FC = () => {
                   </button>
                 </div>
 
-                {/* Highlight colors */}
                 <p className="text-xs mb-2 font-medium" style={{ color: theme.textMuted }}>
                   🎨 Background Highlight
                 </p>
@@ -368,10 +403,8 @@ const AnnotationToolbar: React.FC = () => {
                   ))}
                 </div>
 
-                {/* Divider */}
                 <div className="border-t my-3" style={{ borderColor: theme.border }} />
 
-                {/* Underline colors */}
                 <p className="text-xs mb-2 font-medium" style={{ color: theme.textMuted }}>
                   ✏️ Underline
                 </p>
@@ -426,52 +459,15 @@ const AnnotationToolbar: React.FC = () => {
 
           {/* Copy button */}
           <button
-            onClick={(e) => {
-              e.preventDefault();
-              e.stopPropagation();
-              
-              if (selectedVerses.length === 0) return;
-              
-              const texts: string[] = [];
-              selectedVerses.forEach(verseKey => {
-                const [, , verse] = verseKey.split(':');
-                const el = document.getElementById(`verse-${verse}`);
-                if (el) {
-                  const textSpan = el.querySelector('span[role="button"]');
-                  if (textSpan) {
-                    texts.push(`Verse ${verse}: ${textSpan.textContent?.trim()}`);
-                  }
-                }
-              });
-              
-              const verseData = getSelectedVersesData();
-              const reference = verseData ? `${verseData.bookName} ${verseData.chapter}` : '';
-              const fullText = `${reference}\n\n${texts.join('\n\n')}`;
-              
-              // Use clipboard API
-              navigator.clipboard.writeText(fullText).then(() => {
-                E('✓ Copied to clipboard');
-              }).catch(() => {
-                // Fallback
-                const textarea = document.createElement('textarea');
-                textarea.value = fullText;
-                textarea.style.position = 'fixed';
-                textarea.style.left = '-9999px';
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
-                E('✓ Copied to clipboard');
-              });
-            }}
-            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px]"
-            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}`, cursor: 'pointer' }}
+            onClick={handleCopy}
+            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
+            style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
           >
             <Copy size={18} />
             <span className="text-[11px] font-medium">Copy</span>
           </button>
 
-          {/* Share button - with WhatsApp/Facebook/SMS/Telegram */}
+          {/* Share button */}
           <button
             onClick={handleShare}
             className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
@@ -491,42 +487,10 @@ const AnnotationToolbar: React.FC = () => {
             <span className="text-[11px] font-medium">Bookmark</span>
           </button>
 
-          {/* Image button */}
+          {/* ✅ Image button - Now passes all selected verses */}
           <button
-            onClick={() => {
-              // Get verse text directly from selected verses
-              const verseTexts: string[] = [];
-              let reference = '';
-              
-              selectedVerses.forEach(verseKey => {
-                const [bookId, chapter, verse] = verseKey.split(':');
-                const verseElement = document.getElementById(`verse-${verse}`);
-                if (verseElement) {
-                  const textSpan = verseElement.querySelector('span[role="button"]');
-                  if (textSpan) {
-                    const text = textSpan.textContent?.trim() || '';
-                    verseTexts.push(text);
-                  }
-                }
-                
-                // Build reference from first verse
-                if (!reference) {
-                  const book = BIBLE_BOOKS.find(b => b.id === parseInt(bookId));
-                  reference = `${book?.name || ''} ${chapter}:${verse}`;
-                }
-              });
-              
-              const fullText = verseTexts.join(' ');
-              console.log('Image verse data:', { reference, fullText });
-              
-              if (fullText) {
-                setSelectedVerseForImage({ reference, text: fullText });
-                setShowVerseImageCreator(true);
-              } else {
-                E('Please select verses first');
-              }
-            }}
-            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px]"
+            onClick={handleOpenImageCreator}
+            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
             style={{ backgroundColor: theme.surface, color: theme.text, border: `1px solid ${theme.border}` }}
           >
             <Image size={18} />
@@ -601,18 +565,18 @@ const AnnotationToolbar: React.FC = () => {
         </div>
       )}
 
-      {showVerseImageCreator && selectedVerseForImage && (
+      {/* ✅ VerseImageCreator with all selected verses */}
+      {showVerseImageCreator && selectedVersesForImage.length > 0 && (
         <VerseImageCreator
           isOpen={showVerseImageCreator}
           onClose={() => {
-           setShowVerseImageCreator(false);
-           setSelectedVerseForImage(null);
+            setShowVerseImageCreator(false);
+            setSelectedVersesForImage([]);
           }}
-          verse={selectedVerseForImage}
+          verses={selectedVersesForImage}
           theme={theme}
         />
       )}
-
     </>
   );
 };

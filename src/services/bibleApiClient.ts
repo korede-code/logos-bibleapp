@@ -11,6 +11,8 @@ import { bibleLocal, BibleLocalVerse } from './bibleLocalService';
 
 // Configuration
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://logos-daily-backend.onrender.com/api';
+//const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:10000/api';
+
 const REQUEST_TIMEOUT = 10000; // 10 seconds
 const MAX_RETRIES = 3;
 const RETRY_DELAY = 1000; // 1 second
@@ -346,29 +348,8 @@ class BibleApiClient {
       };
     }
   }
-
-  /**
-   * Get available translations
-   */
-  async getTranslations(): Promise<BibleApiResponse> {
-    try {
-      const response = await this.request<BibleApiResponse>('/bible/translations');
-      return {
-        ...response,
-        source: 'api'
-      };
-    } catch (error) {
-      console.error('Failed to fetch translations:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
-      };
-    }
-  }
-
-  /**
-   * Get random verse
-   */
+ 
+  // Get random verse
   async getRandomVerse(translation: string = 'KJV'): Promise<BibleApiResponse> {
     if (translation === 'KJV' || translation === 'kjv') {
       const localVerse = bibleLocal.getRandomVerse();
