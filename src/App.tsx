@@ -1,5 +1,5 @@
 // src/App.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { useAppStore } from './store/appStore';
@@ -22,7 +22,6 @@ import { getTheme } from './utils/themeUtils';
 import { NotificationService } from './services/NotificationService';
 import HighlightsScreen from './components/HighlightsScreen';
 
-// ✅ Debug logs to verify imports (remove after confirming)
 console.log('✅ HomeScreen:', HomeScreen);
 console.log('✅ ReaderScreen:', ReaderScreen);
 console.log('✅ BottomNav:', BottomNav);
@@ -61,14 +60,30 @@ const SCREENS: Record<AppScreen, React.ComponentType<ScreenProps>> = {
 };
 
 const App: React.FC = () => {
-  console.log('🚀 App component rendering...');
-
+  // ✅ ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURN
   const { currentScreen, readerSettings, setCurrentUser, setProStatus, navigate } = useAppStore();
   const theme = getTheme(readerSettings.theme);
+  
+  // ✅ Use a ref to track render count without causing re-renders
+  const renderCount = useRef(0);
+  renderCount.current += 1;
+  
+  // ✅ Track if this is the first render
+  const isFirstRender = useRef(true);
+  
+  // ✅ Store the loop detection state in state (not in render)
+  const [hasLoopError, setHasLoopError] = useState(false);
 
-  console.log('📱 Current screen:', currentScreen);
+  // ✅ ALL useEffects must be called before any conditional return
+  useEffect(() => {
+    if (renderCount.current > 10 && isFirstRender.current) {
+      isFirstRender.current = false;
+      setHasLoopError(true);
+      console.warn('⚠️ Infinite render loop detected!');
+    }
+  }, []);
 
-  // 🔥 Capacitor listeners 
+  // ✅ Capacitor listeners
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       console.log('🌐 Running on web - skipping native listeners');
@@ -208,10 +223,32 @@ const App: React.FC = () => {
     NotificationService.init();
   }, []);
 
+  // ✅ DEBUG: Log render count (but don't cause infinite loop)
+  console.log(`🔄 App render #${renderCount.current}`);
+
+  // ✅ CHECK FOR LOOP ERROR AFTER ALL HOOKS
+  if (hasLoopError) {
+    return (
+      <div style={{ padding: 20, color: 'white', background: '#1a1a2e', minHeight: '100vh' }}>
+        <h2>⚠️ Render Loop Detected</h2>
+        <p>The app detected an infinite render loop. Please refresh.</p>
+        <p style={{ fontSize: 12, opacity: 0.6 }}>Render count: {renderCount.current}</p>
+        <button 
+          onClick={() => window.location.reload()}
+          style={{ padding: '10px 20px', background: '#488AFF', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}
+        >
+          Refresh App
+        </button>
+      </div>
+    );
+  }
+
+  console.log('🚀 App component rendering...');
+  console.log('📱 Current screen:', currentScreen);
+
   // ✅ Check if ActiveScreen is defined
   const ActiveScreen = SCREENS[currentScreen] ?? HomeScreen;
   
-  // ✅ Log if ActiveScreen is undefined
   if (!ActiveScreen) {
     console.error('❌ ActiveScreen is undefined for screen:', currentScreen);
     return (

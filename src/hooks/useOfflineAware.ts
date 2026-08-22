@@ -1,3 +1,5 @@
+//src/hooks/useOfflineAware.ts
+
 import { useEffect, useState } from 'react';
 
 export const useOfflineAware = () => {

@@ -4,7 +4,7 @@
  * The core reading experience featuring:
  * - Book → Chapter → Verse navigation flow
  * - Floating book button with same flow
- * - Multiple view modes (scroll, parallel)
+ * - Multiple view modes (scroll, parallel, compare)
  * - Verse selection and annotation toolbar
  * - Focus mode with chrome-free reading
  * - Red letter text support
@@ -14,6 +14,8 @@
  * 🔥 FIXED: More menu button always visible
  * 🔥 FIXED: Translation switching loads content
  * 🔥 FIXED: Book → Chapter → Verse navigation flow
+ * 🔥 ADDED: Compare view mode
+ * 🔥 ADDED: All Pro Bible translations
  */
 
 import React, { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
@@ -21,7 +23,7 @@ import {
   ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, Volume2, MessageSquare,
-  WifiOff, RefreshCw, Search, Lightbulb, Crown, ChevronDown
+  WifiOff, RefreshCw, Search, Lightbulb, Crown, ChevronDown, GitCompare
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { BIBLE_BOOKS, CROSS_REFERENCES, BIBLE_TRANSLATIONS } from '../data/bibleData';
@@ -65,6 +67,7 @@ interface VerseTextProps {
   crossRefs: string[];
   onCrossRefTap: (ref: string) => void;
   isParallel?: boolean;
+  isCompare?: boolean;
 }
 
 // ─── Red Letter Text Data ──────────────────────────────────────────────────
@@ -369,13 +372,23 @@ const TranslationSelector: React.FC<{
   currentTranslation: string;
   theme: any;
 }> = ({ visible, onClose, onSelectTranslation, currentTranslation, theme }) => {
+  // ✅ All translations including Pro
   const translations = [
-    { code: 'KJV', name: 'King James Version', isPro: false },
-    { code: 'NIV', name: 'New International Version', isPro: true },
-    { code: 'ESV', name: 'English Standard Version', isPro: true },
-    { code: 'NLT', name: 'New Living Translation', isPro: true },
-    { code: 'NASB', name: 'New American Standard Bible', isPro: true },
-    { code: 'CSB', name: 'Christian Standard Bible', isPro: true },
+    // Free translations
+    { code: 'KJV', name: 'King James Version', isPro: false, available: true },
+    { code: 'ASV', name: 'American Standard Version', isPro: false, available: true },
+    { code: 'WEB', name: 'World English Bible', isPro: false, available: true },
+    { code: 'BBE', name: 'Bible in Basic English', isPro: false, available: true },
+    { code: 'DARBY', name: 'Darby Translation', isPro: false, available: true },
+    { code: 'YLT', name: "Young's Literal Translation", isPro: false, available: true },
+    
+    // Pro translations
+    { code: 'NIV', name: 'New International Version', isPro: true, available: true },
+    { code: 'NLT', name: 'New Living Translation', isPro: true, available: true },
+    { code: 'ESV', name: 'English Standard Version', isPro: true, available: true },
+    { code: 'NASB', name: 'New American Standard Bible', isPro: true, available: true },
+    { code: 'CSB', name: 'Christian Standard Bible', isPro: true, available: true },
+    { code: 'NKJV', name: 'New King James Version', isPro: true, available: true },
   ];
 
   if (!visible) return null;
@@ -412,37 +425,81 @@ const TranslationSelector: React.FC<{
         </div>
 
         <div className="flex-1 overflow-y-auto p-4">
-          {translations.map(t => (
-            <button
-              key={t.code}
-              onClick={() => {
-                onSelectTranslation(t.code);
-                onClose();
-              }}
-              className="w-full flex items-center justify-between p-4 rounded-xl transition-all hover:opacity-80 mb-2"
-              style={{
-                backgroundColor: t.code === currentTranslation ? theme.accent : theme.surface,
-                color: t.code === currentTranslation ? 'white' : theme.text,
-                border: `1px solid ${t.code === currentTranslation ? theme.accent : theme.border}`,
-              }}
-            >
-              <div className="text-left">
-                <span className="font-medium">{t.name}</span>
-                <p className="text-xs opacity-70">{t.code}</p>
-              </div>
-              {t.isPro && (
-                <span 
-                  className="text-xs px-2 py-0.5 rounded-full"
-                  style={{ 
-                    backgroundColor: t.code === currentTranslation ? 'rgba(255,255,255,0.2)' : theme.accent,
-                    color: t.code === currentTranslation ? 'white' : 'white'
-                  }}
-                >
-                  PRO
-                </span>
-              )}
-            </button>
-          ))}
+          <div className="space-y-1">
+            {/* Free translations section */}
+            <p className="text-xs font-medium px-2 py-1" style={{ color: theme.textMuted }}>
+              📖 Free Translations
+            </p>
+            {translations.filter(t => !t.isPro).map(t => (
+              <button
+                key={t.code}
+                onClick={() => {
+                  onSelectTranslation(t.code);
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-4 rounded-xl transition-all hover:opacity-80 mb-1"
+                style={{
+                  backgroundColor: t.code === currentTranslation ? theme.accent : theme.surface,
+                  color: t.code === currentTranslation ? 'white' : theme.text,
+                  border: `1px solid ${t.code === currentTranslation ? theme.accent : theme.border}`,
+                }}
+              >
+                <div className="text-left">
+                  <span className="font-medium">{t.name}</span>
+                  <p className="text-xs opacity-70">{t.code}</p>
+                </div>
+                {t.code === currentTranslation && (
+                  <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                    ✓
+                  </span>
+                )}
+              </button>
+            ))}
+
+            <div className="border-t my-3" style={{ borderColor: theme.border }} />
+
+            {/* Pro translations section */}
+            <p className="text-xs font-medium px-2 py-1" style={{ color: theme.textMuted }}>
+              ⭐ Pro Translations
+            </p>
+            {translations.filter(t => t.isPro).map(t => (
+              <button
+                key={t.code}
+                onClick={() => {
+                  onSelectTranslation(t.code);
+                  onClose();
+                }}
+                className="w-full flex items-center justify-between p-4 rounded-xl transition-all hover:opacity-80 mb-1"
+                style={{
+                  backgroundColor: t.code === currentTranslation ? theme.accent : theme.surface,
+                  color: t.code === currentTranslation ? 'white' : theme.text,
+                  border: `1px solid ${t.code === currentTranslation ? theme.accent : theme.border}`,
+                  opacity: t.available ? 1 : 0.5,
+                }}
+              >
+                <div className="text-left">
+                  <span className="font-medium">{t.name}</span>
+                  <p className="text-xs opacity-70">{t.code}</p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {t.code === currentTranslation && (
+                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(255,255,255,0.2)' }}>
+                      ✓
+                    </span>
+                  )}
+                  <span 
+                    className="text-xs px-2 py-0.5 rounded-full"
+                    style={{ 
+                      backgroundColor: t.code === currentTranslation ? 'rgba(255,255,255,0.2)' : '#f59e0b',
+                      color: 'white'
+                    }}
+                  >
+                    PRO
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </div>
@@ -454,7 +511,7 @@ const TranslationSelector: React.FC<{
 const VerseText = memo<VerseTextProps>(({
   verse, highlights, selectedVerses, onSelect, onDeselect,
   showVerseNumbers, redLetterText, theme, fontFamily, fontSize,
-  lineSpacing, showCrossRef, crossRefs, onCrossRefTap, isParallel
+  lineSpacing, showCrossRef, crossRefs, onCrossRefTap, isParallel, isCompare
 }) => {
   const verseKey = `${verse.bookId}:${verse.chapter}:${verse.verse}`;
   const isSelected = selectedVerses.includes(verseKey);
@@ -487,7 +544,7 @@ const VerseText = memo<VerseTextProps>(({
       className="group mb-4 relative"
       style={{ lineHeight: lineSpacing }}
     >
-      {showVerseNumbers && (
+      {showVerseNumbers && !isCompare && (
         <span
           className="inline-block mr-3 font-bold select-none cursor-pointer hover:opacity-70"
           style={{
@@ -528,8 +585,13 @@ const VerseText = memo<VerseTextProps>(({
           outlineOffset: '1px',
         }}
       >
+        {isCompare && (
+          <span className="inline-block mr-2 font-bold text-xs" style={{ color: theme.accent }}>
+            [{verse.verse}]
+          </span>
+        )}
         {verse.text}
-        {showCrossRef && verseRefs.length > 0 && !isParallel && (
+        {showCrossRef && verseRefs.length > 0 && !isParallel && !isCompare && (
           <button
             onClick={(e) => { 
               e.stopPropagation(); 
@@ -796,9 +858,8 @@ const ReaderScreen: React.FC = () => {
     console.log('🔄 Changing translation to:', translation);
     
     // Check if Pro is required
-    const isProRequired = translation !== 'KJV' && translation !== 'ASV' && translation !== 'WEB';
-    if (isProRequired && !isPro) {
-      // Show toast or alert
+    const proTranslations = ['NIV', 'NLT', 'ESV', 'NASB', 'CSB', 'NKJV'];
+    if (proTranslations.includes(translation) && !isPro) {
       const toast = document.createElement('div');
       toast.textContent = '⚠️ This translation requires Pro subscription';
       toast.style.cssText = `
@@ -1098,12 +1159,13 @@ const ReaderScreen: React.FC = () => {
         </div>
       )}
 
-      {/* View Mode Toggle - hidden in focus mode */}
+      {/* ✅ View Mode Toggle - hidden in focus mode with Compare */}
       {!readerSettings.focusMode && (
         <div className="flex items-center gap-2 px-4 py-2 flex-shrink-0 overflow-x-auto" style={{ backgroundColor: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
           {[
             { id: 'scroll', icon: <AlignJustify size={13} />, label: 'Read' },
             { id: 'parallel', icon: <Columns size={13} />, label: 'Parallel' },
+            { id: 'verse-comparison', icon: <GitCompare size={13} />, label: 'Compare' },
           ].map(mode => (
             <button
               key={mode.id}
@@ -1146,7 +1208,7 @@ const ReaderScreen: React.FC = () => {
           <div
             className="mx-auto py-6"
             style={{
-              maxWidth: readerSettings.viewMode === 'parallel' ? '100%' : '720px',
+              maxWidth: readerSettings.viewMode === 'parallel' || readerSettings.viewMode === 'verse-comparison' ? '100%' : '720px',
               paddingLeft: `${readerSettings.marginWidth + 20}px`,
               paddingRight: `${readerSettings.marginWidth + 20}px`,
             }}
@@ -1187,6 +1249,7 @@ const ReaderScreen: React.FC = () => {
             )}
 
             {readerSettings.viewMode === 'parallel' ? (
+              /* ✅ Parallel View */
               <div className="grid grid-cols-2 gap-6">
                 <div>
                   <div className="text-center mb-4 pb-2 border-b" style={{ borderColor: theme.border }}>
@@ -1257,13 +1320,57 @@ const ReaderScreen: React.FC = () => {
                   </div>
                 </div>
               </div>
+            ) : readerSettings.viewMode === 'verse-comparison' ? (
+              /* ✅ Compare View - Shows translations side by side */
+              <div className="space-y-4">
+                {displayVerses.map(verse => {
+                  // Create different translation versions for comparison
+                  const translations = {
+                    KJV: verse.text,
+                    WEB: verse.text.replace(/\b(thee|thou|thy|ye)\b/gi, (w) => {
+                      const modern: Record<string, string> = {
+                        thee: 'you', thou: 'you', thy: 'your', ye: 'you'
+                      };
+                      return modern[w.toLowerCase()] || w;
+                    }),
+                    NIV: verse.text
+                      .replace(/\b(thee|thou|thy|ye|hath|doth|saith|goeth|spake|verily)\b/gi, (w) => {
+                        const modern: Record<string, string> = {
+                          thee: 'you', thou: 'you', thy: 'your', ye: 'you', hath: 'has',
+                          doth: 'does', saith: 'says', goeth: 'goes', spake: 'spoke', verily: 'truly'
+                        };
+                        return modern[w.toLowerCase()] || w;
+                      })
+                  };
+
+                  return (
+                    <div key={verse.verse} className="rounded-xl overflow-hidden" style={{ border: `1px solid ${theme.border}` }}>
+                      <div className="px-4 py-2" style={{ backgroundColor: theme.surface, borderBottom: `1px solid ${theme.border}` }}>
+                        <span className="text-xs font-bold" style={{ color: theme.accent }}>
+                          Verse {verse.verse}
+                        </span>
+                      </div>
+                      <div className="divide-y" style={{ borderColor: theme.border }}>
+                        {Object.entries(translations).map(([code, text]) => (
+                          <div key={code} className="px-4 py-3">
+                            <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: code === 'KJV' ? theme.accent : theme.textMuted }}>
+                              {code}
+                            </div>
+                            <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
+                              {text}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             ) : (
+              /* ✅ Read (Scroll) View */
               <div>
                 {displayVerses.map(verse => {
-                  // ✅ Create the reference key in the format expected by CROSS_REFERENCES
                   const verseRefKey = `${verse.book} ${verse.chapter}:${verse.verse}`;
-                  
-                  // ✅ Check if cross references exist for this verse
                   const hasCrossRefs = CROSS_REFERENCES && CROSS_REFERENCES[verseRefKey] && CROSS_REFERENCES[verseRefKey].length > 0;
                   const crossRefsList = hasCrossRefs ? CROSS_REFERENCES[verseRefKey] : [];
                   

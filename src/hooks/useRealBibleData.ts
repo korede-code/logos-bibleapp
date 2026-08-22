@@ -1,15 +1,10 @@
-/**
- * Real Bible Data Hook
- * ====================
- * Simplified custom hooks for accessing Bible API data
- * Now with offline caching support!
- */
+// src/hooks/useRealBibleData.ts
 
-import { useEffect, useCallback, useState } from 'react';
+import { useEffect, useCallback, useState, useRef } from 'react';
 import { useAppStore } from '../store/appStore';
 import { offlineStorage } from '../services/offlineStorage';
+import { bibleLocal } from '../services/bibleLocalService';
 
-// Types
 export interface Verse {
   reference: string;
   text: string;
@@ -17,15 +12,6 @@ export interface Verse {
   book: string;
   chapter: number;
   verse: number;
-}
-
-export interface UseBibleVerseResult {
-  verse: Verse | null;
-  isLoading: boolean;
-  error: string | null;
-  refetch: () => Promise<void>;
-  isOffline: boolean;
-  fromCache: boolean;
 }
 
 export interface UseBibleChapterResult {
@@ -54,89 +40,54 @@ export interface UseOfflineSyncResult {
   sync: () => Promise<void>;
 }
 
- // Hook for fetching a single verse
-export function useBibleVerse(
-  book: string,
-  chapter: number,
-  verseNumber: number,
-  translation: string = 'KJV'
-): UseBibleVerseResult {
-  const { fetchVerse, isApiLoading, apiError, isOnline } = useAppStore();
-  const [verseData, setVerseData] = useState<Verse | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [fromCache, setFromCache] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    setIsLoading(true);
-    setError(null);
-    
-    try {
-      // Try cache first
-      const cached = await offlineStorage.getChapter(book, chapter, translation);
-      if (cached) {
-        const cachedVerse = cached.verses.find((v: any) => v.verse === verseNumber);
-        if (cachedVerse) {
-          setVerseData(cachedVerse);
-          setFromCache(true);
-          setIsLoading(false);
-          return;
-        }
-      }
-      
-      // Fetch from API
-      const data = await fetchVerse(translation, book, chapter, verseNumber);
-      if (data) {
-        setVerseData(data);
-        setFromCache(false);
-      } else {
-        setError('No verse found');
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch verse');
-    } finally {
-      setIsLoading(false);
-    }
-  }, [book, chapter, verseNumber, translation, fetchVerse]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  return {
-    verse: verseData,
-    isLoading: isLoading || isApiLoading,
-    error: error || apiError,
-    refetch: fetchData,
-    isOffline: !isOnline,
-    fromCache,
-  };
-}
-
- // Hook for fetching an entire chapter (with offline caching)
+// ✅ Hook for fetching a chapter with local fallback
 export function useBibleChapter(
   book: string,
   chapter: number,
   translation: string = 'KJV'
 ): UseBibleChapterResult {
   const { currentChapterVerses, fetchChapter, isApiLoading, apiError, isOnline } = useAppStore();
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [fromCache, setFromCache] = useState(false);
-
-  console.log(`📖 useBibleChapter: Fetching ${book} ${chapter} (${translation})`);
+  const hasFetchedRef = useRef(false);
 
   const fetchData = useCallback(async () => {
+    // ✅ Prevent multiple fetches
+    if (hasFetchedRef.current && currentChapterVerses?.length > 0) {
+      return;
+    }
+    
     console.log(`📖 Fetching ${book} ${chapter} (${translation})`);
     setIsLoading(true);
     setError(null);
     setProgress(10);
+    hasFetchedRef.current = true;
     
     try {
-      // ✅ 1. Try offline cache first
+      // ✅ 1. Use local KJV first (instant)
+      if (translation === 'KJV' || translation === 'kjv') {
+        const localChapter = bibleLocal.getChapter(book, chapter);
+        if (localChapter && localChapter.verses.length > 0) {
+          const verses = localChapter.verses.map(v => ({
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            text: v.text,
+            translation: 'KJV',
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse
+          }));
+          useAppStore.setState({ currentChapterVerses: verses });
+          setFromCache(true);
+          setProgress(100);
+          setIsLoading(false);
+          return;
+        }
+      }
+
+      // ✅ 2. Try offline storage
       const cached = await offlineStorage.getChapter(book, chapter, translation);
-      
       if (cached && cached.verses.length > 0) {
         console.log(`📦 Loaded from offline cache: ${book} ${chapter}`);
         useAppStore.setState({ currentChapterVerses: cached.verses });
@@ -146,11 +97,11 @@ export function useBibleChapter(
         return;
       }
       
-      // ✅ 2. Fetch from API
+      // ✅ 3. Fetch from API
       setProgress(30);
       await fetchChapter(translation, book, chapter);
       
-      // ✅ 3. Cache for offline use
+      // ✅ 4. Cache for offline use
       const verses = useAppStore.getState().currentChapterVerses;
       if (verses && verses.length > 0) {
         await offlineStorage.saveChapter(book, chapter, translation, verses);
@@ -163,14 +114,33 @@ export function useBibleChapter(
     } catch (err) {
       console.error('❌ Error:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch chapter');
+      
+      // ✅ Fallback to local KJV
+      const fallbackChapter = bibleLocal.getChapter(book, chapter);
+      if (fallbackChapter && fallbackChapter.verses.length > 0) {
+        const verses = fallbackChapter.verses.map(v => ({
+          reference: `${v.book} ${v.chapter}:${v.verse}`,
+          text: v.text,
+          translation: 'KJV (Fallback)',
+          book: v.book,
+          chapter: v.chapter,
+          verse: v.verse
+        }));
+        useAppStore.setState({ currentChapterVerses: verses });
+        setFromCache(true);
+        setProgress(100);
+      }
     } finally {
       setIsLoading(false);
     }
-  }, [book, chapter, translation, fetchChapter]);
+  }, [book, chapter, translation, fetchChapter, currentChapterVerses]);
 
+  // ✅ Use effect with proper dependencies
   useEffect(() => {
+    // Reset fetch flag when book/chapter changes
+    hasFetchedRef.current = false;
     fetchData();
-  }, [fetchData]);
+  }, [book, chapter, translation]);
 
   return {
     verses: currentChapterVerses,
@@ -183,7 +153,7 @@ export function useBibleChapter(
   };
 }
 
- // Hook for searching the Bible
+// ✅ Hook for searching
 export function useBibleSearch(): UseBibleSearchResult {
   const { searchBible, searchResults, isApiLoading, apiError } = useAppStore();
   const [isLoading, setIsLoading] = useState(false);
@@ -215,7 +185,7 @@ export function useBibleSearch(): UseBibleSearchResult {
   };
 }
 
- // Hook for checking offline status
+// ✅ Hook for offline sync
 export function useOfflineSync(): UseOfflineSyncResult {
   const { isOnline, pendingSyncCount, syncOfflineChanges } = useAppStore();
   const [isSyncing, setIsSyncing] = useState(false);
@@ -238,5 +208,69 @@ export function useOfflineSync(): UseOfflineSyncResult {
     lastSyncTime,
     queueSize: pendingSyncCount,
     sync,
+  };
+}
+
+// ✅ Hook for single verse
+export function useBibleVerse(
+  book: string,
+  chapter: number,
+  verseNumber: number,
+  translation: string = 'KJV'
+) {
+  const { fetchVerse, isApiLoading, apiError, isOnline } = useAppStore();
+  const [verseData, setVerseData] = useState<Verse | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [fromCache, setFromCache] = useState(false);
+
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    
+    try {
+      // ✅ Try local KJV first
+      if (translation === 'KJV' || translation === 'kjv') {
+        const localVerse = bibleLocal.getVerse(book, chapter, verseNumber);
+        if (localVerse) {
+          setVerseData({
+            reference: `${localVerse.book} ${localVerse.chapter}:${localVerse.verse}`,
+            text: localVerse.text,
+            translation: 'KJV',
+            book: localVerse.book,
+            chapter: localVerse.chapter,
+            verse: localVerse.verse
+          });
+          setFromCache(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+      
+      const data = await fetchVerse(translation, book, chapter, verseNumber);
+      if (data) {
+        setVerseData(data);
+        setFromCache(false);
+      } else {
+        setError('No verse found');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch verse');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [book, chapter, verseNumber, translation, fetchVerse]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  return {
+    verse: verseData,
+    isLoading: isLoading || isApiLoading,
+    error: error || apiError,
+    refetch: fetchData,
+    isOffline: !isOnline,
+    fromCache,
   };
 }

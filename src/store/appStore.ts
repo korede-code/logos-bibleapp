@@ -370,6 +370,7 @@ const restoreProStatus = () => {
 // ─── Store Implementation ─────────────────────────────────────────────────────
 
 export const useAppStore = create<AppState>((set, get) => ({
+
   // Initial State
   currentScreen: 'home',
   previousScreen: null,
@@ -895,7 +896,45 @@ export const useAppStore = create<AppState>((set, get) => ({
     console.log(`📖 Store: fetchChapter called for ${translation}/${book}/${chapter}`);
     set({ isApiLoading: true, apiError: null });
 
-    // ✅ Check local cache first
+    // ✅ ALWAYS use local Bible for KJV (no internet needed)
+    if (translation === 'KJV' || translation === 'kjv') {
+      // Check if book exists
+      if (!bibleLocal.bookExists(book)) {
+        console.error(`❌ Book "${book}" not found in local Bible`);
+        set({ 
+          apiError: `Book "${book}" not found`,
+          isApiLoading: false 
+        });
+        return;
+      }
+
+      // Check if chapter exists
+      if (!bibleLocal.chapterExists(book, chapter)) {
+        console.error(`❌ Chapter ${chapter} not found in ${book}`);
+        set({ 
+          apiError: `Chapter ${chapter} not found in ${book}`,
+          isApiLoading: false 
+        });
+        return;
+      }
+
+      const localChapter = bibleLocal.getChapter(book, chapter);
+      if (localChapter) {
+        const formattedVerses = localChapter.verses.map(v => ({
+          reference: `${v.book} ${v.chapter}:${v.verse}`,
+          text: v.text,
+          translation: v.translation,
+          book: v.book,
+          chapter: v.chapter,
+          verse: v.verse
+        }));
+        console.log(`✅ Store: Loaded ${formattedVerses.length} verses locally (instant, no internet!)`);
+        set({ currentChapterVerses: formattedVerses, isApiLoading: false });
+        return;
+      }
+    }
+
+    // ✅ For other translations, check cache first
     const cacheKey = `${translation}:${book}:${chapter}`;
     const cached = localStorage.getItem(`chapter_${cacheKey}`);
 
@@ -912,13 +951,12 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // ✅ Only fetch from API if not KJV and not cached
     try {
       console.log(`📡 Store: Fetching from API: ${translation}/${book}/${chapter}`);
       const response = await bibleApi.getChapter(translation, book, chapter);
-      console.log(`📥 Store: API Response:`, response);
 
       if (response.success && response.data) {
-        // Ensure we have valid verses
         let verses = response.data;
 
         if (Array.isArray(verses) && verses.length > 0) {
@@ -931,8 +969,6 @@ export const useAppStore = create<AppState>((set, get) => ({
             verse: v.verse
           }));
 
-          console.log(`✅ Store: Formatted ${formattedVerses.length} verses`);
-
           localStorage.setItem(`chapter_${cacheKey}`, JSON.stringify({
             data: formattedVerses,
             timestamp: Date.now()
@@ -940,7 +976,6 @@ export const useAppStore = create<AppState>((set, get) => ({
 
           set({ currentChapterVerses: formattedVerses, isApiLoading: false });
         } else {
-          console.warn('⚠️ Store: No verses in response');
           set({ currentChapterVerses: [], isApiLoading: false });
         }
       } else {
@@ -948,6 +983,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     } catch (error) {
       console.error('❌ Store: Failed to fetch chapter:', error);
+      
+      // ✅ Try KJV as fallback if available
+      if (translation !== 'KJV' && translation !== 'kjv') {
+        const fallbackChapter = bibleLocal.getChapter(book, chapter);
+        if (fallbackChapter) {
+          const formattedVerses = fallbackChapter.verses.map(v => ({
+            reference: `${v.book} ${v.chapter}:${v.verse}`,
+            text: v.text,
+            translation: 'KJV (Offline Fallback)',
+            book: v.book,
+            chapter: v.chapter,
+            verse: v.verse
+          }));
+          console.log(`📖 Using KJV as offline fallback for ${book} ${chapter}`);
+          set({ currentChapterVerses: formattedVerses, isApiLoading: false });
+          return;
+        }
+      }
+      
       set({
         apiError: `Unable to load ${book} ${chapter}`,
         isApiLoading: false
@@ -955,6 +1009,70 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
+  // ✅ Update fetchVerse to use local first
+  fetchVerse: async (translation: string, book: string, chapter: number, verse: number) => {
+    // ✅ ALWAYS use local for KJV
+    if (translation === 'KJV' || translation === 'kjv') {
+      const localVerse = bibleLocal.getVerse(book, chapter, verse);
+      if (localVerse) {
+        return {
+          reference: `${localVerse.book} ${localVerse.chapter}:${localVerse.verse}`,
+          text: localVerse.text,
+          translation: localVerse.translation,
+          book: localVerse.book,
+          chapter: localVerse.chapter,
+          verse: localVerse.verse
+        };
+      }
+    }
+
+    // ✅ Try cache
+    const cacheKey = `${translation}:${book}:${chapter}:${verse}`;
+    const cached = localStorage.getItem(`verse_${cacheKey}`);
+    
+    if (cached) {
+      try {
+        return JSON.parse(cached);
+      } catch (e) {
+        console.error('Failed to parse cached verse', e);
+      }
+    }
+    
+    // ✅ Fallback to API
+    try {
+      const response = await bibleApi.getVerse(translation, book, chapter, verse);
+      
+      if (response.success && response.data && response.data[0]) {
+        const verseData = {
+          reference: `${response.data[0].book} ${response.data[0].chapter}:${response.data[0].verse}`,
+          text: response.data[0].text,
+          translation: translation,
+          book: response.data[0].book,
+          chapter: response.data[0].chapter,
+          verse: response.data[0].verse
+        };
+        
+        localStorage.setItem(`verse_${cacheKey}`, JSON.stringify(verseData));
+        return verseData;
+      }
+      return null;
+    } catch (error) {
+      console.error('Failed to fetch verse:', error);
+      // ✅ Try KJV as fallback
+      const fallbackVerse = bibleLocal.getVerse(book, chapter, verse);
+      if (fallbackVerse) {
+        return {
+          reference: `${fallbackVerse.book} ${fallbackVerse.chapter}:${fallbackVerse.verse}`,
+          text: fallbackVerse.text,
+          translation: 'KJV (Offline Fallback)',
+          book: fallbackVerse.book,
+          chapter: fallbackVerse.chapter,
+          verse: fallbackVerse.verse
+        };
+      }
+      return null;
+    }
+  },
   // ✅ Add fallback method for individual verse fetching
   fetchChapterFallback: async (book: string, chapter: number) => {
     console.log(`📖 Fetching chapter ${chapter} of ${book} verse by verse from local Bible`);
@@ -985,44 +1103,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     
     console.log(`✅ Fallback: Loaded ${verses.length} verses from local Bible`);
     return verses;
-  },
-
-
-
-
-  fetchVerse: async (translation, book, chapter, verse) => {
-    const cacheKey = `${translation}:${book}:${chapter}:${verse}`;
-    const cached = localStorage.getItem(`verse_${cacheKey}`);
-    
-    if (cached) {
-      try {
-        return JSON.parse(cached);
-      } catch (e) {
-        console.error('Failed to parse cached verse', e);
-      }
-    }
-    
-    try {
-      const response = await bibleApi.getVerse(translation, book, chapter, verse);
-      
-      if (response.success && response.data && response.data[0]) {
-        const verseData: RealVerse = {
-          reference: `${response.data[0].book} ${response.data[0].chapter}:${response.data[0].verse}`,
-          text: response.data[0].text,
-          translation: translation,
-          book: response.data[0].book,
-          chapter: response.data[0].chapter,
-          verse: response.data[0].verse
-        };
-        
-        localStorage.setItem(`verse_${cacheKey}`, JSON.stringify(verseData));
-        return verseData;
-      }
-      return null;
-    } catch (error) {
-      console.error('Failed to fetch verse:', error);
-      return null;
-    }
   },
 
   searchBible: async (query, translation = 'KJV') => {
@@ -1117,6 +1197,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 }));
+
+// Add this right after your store creation
+useAppStore.subscribe((state, prevState) => {
+  console.log('🔄 Store changed:', {
+    currentScreen: state.currentScreen,
+    prevScreen: prevState.currentScreen,
+    isPro: state.isPro,
+    apiLoading: state.isApiLoading,
+    versesLength: state.currentChapterVerses?.length || 0,
+    verseOfTheDay: state.realVerseOfTheDay?.reference || null,
+  });
+});
 
 // ===== HELPER FUNCTIONS =====
 

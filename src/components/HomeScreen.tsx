@@ -2,32 +2,31 @@
  * Logos Daily — Home Screen Component
  * =====================================
  * The dynamic home screen featuring:
- * - Daily verse with beautiful card presentation
+ * - Daily verse with beautiful card presentation (loads from LOCAL Bible)
  * - Quick-resume reading button
  * - Reading streak tracker
  * - Active reading plans progress
  * - Recent highlights and bookmarks
  * - Quick navigation to study tools
  * 
+ * 🔥 FIXED: Uses LOCAL Bible data only (no API calls for KJV)
+ * 🔥 FIXED: No infinite render loops
+ * 🔥 FIXED: Works offline on Android
  * 🔥 FIXED: Horizontal scrolling prevented
- * 🔥 FIXED: Verse of the Day updates when date changes
- * 🔥 FIXED: Proper cache invalidation on new day
- * 🔥 FIXED: Navigation for both card and Read Chapter button
- * 🔥 FIXED: Proper parsing of DAILY_VERSES fallback data
  */
 
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import {
   BookOpen, Bookmark, Flame, Star, ChevronRight,
   Sun, Cloud, CloudRain, Target,
   TrendingUp, Clock, Wifi, Bell, RefreshCw, Crown
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { DAILY_VERSES, BIBLE_BOOKS } from '../data/bibleData';
-import { format, isSameDay, startOfDay, differenceInDays } from 'date-fns';
-import { bibleApi } from '../services/bibleApiClient';
+import { BIBLE_BOOKS } from '../data/bibleData';
+import { format } from 'date-fns';
 import ProUpgradeModal from './ProUpgradeModal';
 import { auth } from '../config/firebase';
+import { bibleLocal } from '../services/bibleLocalService';
 
 interface HomeScreenProps {
   theme?: any;
@@ -47,19 +46,6 @@ const defaultTheme = {
   warning: '#f59e0b'
 };
 
-// ✅ Helper function to parse verse reference like "John 3:16"
-const parseVerseReference = (reference: string) => {
-  const match = reference.match(/^([A-Za-z\s]+)\s+(\d+):(\d+)$/);
-  if (match) {
-    return {
-      book: match[1].trim(),
-      chapter: parseInt(match[2]),
-      verse: parseInt(match[3])
-    };
-  }
-  return null;
-};
-
 // ✅ Helper to find book ID
 const findBookId = (bookName: string): number => {
   const book = BIBLE_BOOKS.find(b => 
@@ -68,45 +54,27 @@ const findBookId = (bookName: string): number => {
   return book?.id || 43;
 };
 
-// ✅ Helper to get today's date string
-const getTodayString = () => format(new Date(), 'yyyy-MM-dd');
-
-// ✅ Helper to check if date has changed
-const hasDateChanged = (storedDate: string | null): boolean => {
-  if (!storedDate) return true;
-  return storedDate !== getTodayString();
-};
-
 const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => {
-  const t = theme || defaultTheme;
   const {
     readerSettings, readingPosition, streak,
-    activePlans, highlights, bookmarks,
-    notes, isPro, setReadingPosition,
-    realVerseOfTheDay,
-    isApiLoading,
-    apiError,
-    fetchRealVerseOfTheDay,
-    isOnline,
-    verseCache,
-    setVerseCache,
-    getCachedVerse,
-    isVerseCacheValid
+    highlights, bookmarks, notes, isPro, setReadingPosition,
+    isApiLoading, isOnline
   } = useAppStore();
 
+  const t = theme || defaultTheme;
   const [greeting, setGreeting] = useState('');
   const [timeOfDay, setTimeOfDay] = useState<'morning' | 'afternoon' | 'evening' | 'night'>('morning');
   const [refreshing, setRefreshing] = useState(false);
   const [showProModal, setShowProModal] = useState(false);
   const [currentUser, setCurrentUser] = useState<any>(null);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
-  const [currentDate, setCurrentDate] = useState(getTodayString());
   
-  const hasFetchedRef = useRef(false);
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const dateCheckIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  // ✅ State for verse (loaded from local Bible)
+  const [verse, setVerse] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
-  // Check current user
+  // ✅ Check current user
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
@@ -114,155 +82,78 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     return () => unsubscribe();
   }, []);
 
-  // ✅ Check for date change every minute
+  // ✅ Load verse from LOCAL Bible only (no API calls!)
   useEffect(() => {
-    dateCheckIntervalRef.current = setInterval(() => {
-      const today = getTodayString();
-      if (today !== currentDate) {
-        console.log('📅 Date changed from', currentDate, 'to', today);
-        setCurrentDate(today);
-        
-        // Invalidate cache and fetch new verse
-        const cachedDate = localStorage.getItem('votd_date');
-        if (cachedDate && cachedDate !== today) {
-          console.log('🔄 Date changed, invalidating verse cache');
-          localStorage.removeItem('votd_cached');
-          localStorage.removeItem('votd_timestamp');
-          localStorage.removeItem('votd_date');
-          
-          // Clear state to force refetch
-          useAppStore.setState({ 
-            realVerseOfTheDay: null,
-            verseCache: { verse: null, timestamp: null, date: null }
+    if (hasLoadedRef.current) return;
+    hasLoadedRef.current = true;
+
+    try {
+      // ✅ Get verse from local Bible (instant, no internet needed)
+      const today = new Date();
+      const dayOfYear = Math.floor((today.getTime() - new Date(today.getFullYear(), 0, 0).getTime()) / 86400000);
+      const localVerse = bibleLocal.getVerseOfTheDay();
+      
+      if (localVerse) {
+        console.log('📖 Local verse loaded:', localVerse.book, localVerse.chapter, localVerse.verse);
+        setVerse({
+          reference: `${localVerse.book} ${localVerse.chapter}:${localVerse.verse}`,
+          text: localVerse.text,
+          translation: 'KJV',
+          book: localVerse.book,
+          chapter: localVerse.chapter,
+          verse: localVerse.verse,
+          isCached: true
+        });
+        setLoading(false);
+      } else {
+        // ✅ Fallback to DAILY_VERSES if available
+        const DAILY_VERSES = [
+          { reference: 'John 3:16', text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.', translation: 'KJV' },
+          { reference: 'Psalm 23:1', text: 'The LORD is my shepherd; I shall not want.', translation: 'KJV' },
+          { reference: 'Romans 8:28', text: 'And we know that all things work together for good to them that love God, to them who are the called according to his purpose.', translation: 'KJV' }
+        ];
+        const fallbackVerse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
+        if (fallbackVerse) {
+          const parsed = parseVerseReference(fallbackVerse.reference);
+          setVerse({
+            reference: fallbackVerse.reference,
+            text: fallbackVerse.text,
+            translation: fallbackVerse.translation || 'KJV',
+            book: parsed?.book || 'John',
+            chapter: parsed?.chapter || 3,
+            verse: parsed?.verse || 16,
+            isCached: false
           });
-          
-          hasFetchedRef.current = false;
-          
-          // Fetch new verse
-          if (isOnline) {
-            fetchRealVerseOfTheDay();
-          } else {
-            // Use fallback if offline
-            useFallbackVerse();
-          }
+          setLoading(false);
+        } else {
+          setError('No verse available');
+          setLoading(false);
         }
       }
-    }, 60000); // Check every minute
-
-    return () => {
-      if (dateCheckIntervalRef.current) {
-        clearInterval(dateCheckIntervalRef.current);
-      }
-    };
-  }, [currentDate, isOnline, fetchRealVerseOfTheDay]);
-
-  // ✅ Get the current verse to display (API verse or fallback)
-  const getCurrentVerse = useCallback(() => {
-    // Check if we have a cached verse for today
-    const cachedVerse = localStorage.getItem('votd_cached');
-    const cachedDate = localStorage.getItem('votd_date');
-    const today = getTodayString();
-    
-    // If we have a cached verse for today, use it
-    if (cachedVerse && cachedDate === today) {
-      try {
-        const verse = JSON.parse(cachedVerse);
-        return {
-          reference: verse.reference,
-          text: verse.text,
-          translation: verse.translation || 'NIV',
-          book: verse.book || extractBookFromReference(verse.reference),
-          chapter: verse.chapter || extractChapterFromReference(verse.reference),
-          verse: verse.verse || extractVerseFromReference(verse.reference),
-          isReal: true,
-          isCached: true
-        };
-      } catch (e) {
-        console.error('Failed to parse cached verse:', e);
-      }
-    }
-
-    // If we have a real verse from API, use it
-    if (realVerseOfTheDay) {
-      // Check if it's from today or a previous day
-      const verseDate = localStorage.getItem('votd_date');
-      if (verseDate === today) {
-        return {
-          reference: realVerseOfTheDay.reference,
-          text: realVerseOfTheDay.text,
-          translation: realVerseOfTheDay.translation || 'NIV',
-          book: realVerseOfTheDay.book || extractBookFromReference(realVerseOfTheDay.reference),
-          chapter: realVerseOfTheDay.chapter || extractChapterFromReference(realVerseOfTheDay.reference),
-          verse: realVerseOfTheDay.verse || extractVerseFromReference(realVerseOfTheDay.reference),
-          isReal: true,
-          isCached: false
-        };
-      }
-    }
-    
-    // Otherwise use DAILY_VERSES as fallback
-    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-    const fallbackVerse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
-    
-    if (fallbackVerse) {
-      const parsed = parseVerseReference(fallbackVerse.reference);
-      return {
-        reference: fallbackVerse.reference,
-        text: fallbackVerse.text,
-        translation: fallbackVerse.translation || 'KJV',
-        book: parsed?.book || 'John',
-        chapter: parsed?.chapter || 3,
-        verse: parsed?.verse || 16,
-        isReal: false,
-        isCached: false
-      };
-    }
-    
-    return null;
-  }, [realVerseOfTheDay]);
-
-  // ✅ Use fallback verse when offline
-  const useFallbackVerse = useCallback(() => {
-    const dayOfYear = Math.floor((Date.now() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 86400000);
-    const fallbackVerse = DAILY_VERSES[dayOfYear % DAILY_VERSES.length];
-    
-    if (fallbackVerse) {
-      const parsed = parseVerseReference(fallbackVerse.reference);
-      const verseData = {
-        reference: fallbackVerse.reference,
-        text: fallbackVerse.text,
-        translation: fallbackVerse.translation || 'KJV',
-        book: parsed?.book || 'John',
-        chapter: parsed?.chapter || 3,
-        verse: parsed?.verse || 16
-      };
-      
-      // Cache it
-      localStorage.setItem('votd_cached', JSON.stringify(verseData));
-      localStorage.setItem('votd_timestamp', String(Date.now()));
-      localStorage.setItem('votd_date', getTodayString());
-      
-      useAppStore.setState({ realVerseOfTheDay: verseData });
+    } catch (err) {
+      console.error('❌ Failed to load verse:', err);
+      setError('Failed to load verse');
+      setLoading(false);
     }
   }, []);
 
   // ✅ Navigation helper for verse card
-  const navigateToVerse = useCallback((verse: any, goToChapter: boolean = false) => {
-    if (!verse) {
+  const navigateToVerse = useCallback((verseData: any, goToChapter: boolean = false) => {
+    if (!verseData) {
       console.error('❌ No verse data to navigate to');
       return;
     }
     
-    console.log(`📖 Navigating to ${goToChapter ? 'chapter' : 'verse'}:`, verse.reference);
+    console.log(`📖 Navigating to ${goToChapter ? 'chapter' : 'verse'}:`, verseData.reference);
     
     // Find the book in BIBLE_BOOKS
     let bookData = BIBLE_BOOKS.find(b => 
-      b.name.toLowerCase() === verse.book.toLowerCase()
+      b.name.toLowerCase() === verseData.book.toLowerCase()
     );
     
     if (!bookData) {
       bookData = BIBLE_BOOKS.find(b => 
-        verse.reference.toLowerCase().includes(b.name.toLowerCase())
+        verseData.reference.toLowerCase().includes(b.name.toLowerCase())
       );
     }
     
@@ -271,109 +162,27 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
       setReadingPosition({ 
         book: bookData.name, 
         bookId: bookData.id, 
-        chapter: verse.chapter,
-        verse: goToChapter ? 1 : verse.verse
+        chapter: verseData.chapter,
+        verse: goToChapter ? 1 : verseData.verse
       });
       navigate('reader');
     } else {
-      console.error('❌ Book not found for:', verse.book);
+      console.error('❌ Book not found for:', verseData.book);
       setReadingPosition({ 
-        book: verse.book, 
-        bookId: findBookId(verse.book),
-        chapter: verse.chapter,
-        verse: goToChapter ? 1 : verse.verse
+        book: verseData.book, 
+        bookId: findBookId(verseData.book),
+        chapter: verseData.chapter,
+        verse: goToChapter ? 1 : verseData.verse
       });
       navigate('reader');
     }
   }, [setReadingPosition, navigate]);
 
-  // ✅ Optimized fetch with date-based caching
-  useEffect(() => {
-    const today = getTodayString();
-    const cachedDate = localStorage.getItem('votd_date');
-    const cachedVerse = localStorage.getItem('votd_cached');
-    const cachedTimestamp = localStorage.getItem('votd_timestamp');
-    const now = Date.now();
-    const cacheAge = cachedTimestamp ? now - parseInt(cachedTimestamp) : Infinity;
-    const cacheValid = cacheAge < 3600000; // 1 hour cache
-
-    // Check if date has changed
-    const dateChanged = cachedDate !== today;
-
-    // If date changed, clear old cache
-    if (dateChanged) {
-      console.log('📅 Date changed, clearing old cache');
-      localStorage.removeItem('votd_cached');
-      localStorage.removeItem('votd_timestamp');
-      localStorage.removeItem('votd_date');
-      useAppStore.setState({ realVerseOfTheDay: null });
-      hasFetchedRef.current = false;
-    }
-
-    // If we have a valid cached verse for today, use it immediately
-    if (cachedVerse && cachedDate === today && cacheValid && !realVerseOfTheDay) {
-      try {
-        const verse = JSON.parse(cachedVerse);
-        console.log('📦 Using cached verse for today:', verse.reference);
-        useAppStore.setState({ realVerseOfTheDay: verse, isApiLoading: false });
-        setIsInitialLoad(false);
-        return;
-      } catch (e) {
-        console.error('Failed to parse cached verse:', e);
-      }
-    }
-
-    // Only fetch if we haven't already and not currently loading
-    if (!hasFetchedRef.current && !isApiLoading && !realVerseOfTheDay) {
-      hasFetchedRef.current = true;
-      
-      const fetchVerse = () => {
-        if (isOnline) {
-          console.log('🔄 Fetching verse of the day...');
-          fetchRealVerseOfTheDay()
-            .then(() => {
-              setIsInitialLoad(false);
-              const verse = useAppStore.getState().realVerseOfTheDay;
-              if (verse) {
-                localStorage.setItem('votd_cached', JSON.stringify(verse));
-                localStorage.setItem('votd_timestamp', String(Date.now()));
-                localStorage.setItem('votd_date', today);
-              }
-            })
-            .catch((error) => {
-              console.error('Failed to fetch verse:', error);
-              // Use fallback if online fetch fails
-              useFallbackVerse();
-              setIsInitialLoad(false);
-            });
-        } else {
-          // Use fallback offline
-          useFallbackVerse();
-          setIsInitialLoad(false);
-        }
-      };
-
-      if ('requestIdleCallback' in window) {
-        (window as any).requestIdleCallback(fetchVerse, { timeout: 2000 });
-      } else {
-        fetchTimeoutRef.current = setTimeout(fetchVerse, 100);
-      }
-    } else if (realVerseOfTheDay) {
-      setIsInitialLoad(false);
-    }
-
-    return () => {
-      if (fetchTimeoutRef.current) {
-        clearTimeout(fetchTimeoutRef.current);
-      }
-    };
-  }, [fetchRealVerseOfTheDay, isApiLoading, realVerseOfTheDay, isOnline, useFallbackVerse]);
-
-  // ✅ Handle manual refresh
+  // ✅ Handle manual refresh - uses local Bible only
   const handleRefresh = useCallback(async () => {
-    console.log('🔄 Refresh button clicked - fetching random verse');
+    console.log('🔄 Refresh button clicked - getting new local verse');
     
-    if (refreshing || isApiLoading) {
+    if (refreshing || loading) {
       console.log('⏳ Already refreshing or loading, skipping...');
       return;
     }
@@ -381,57 +190,34 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     setRefreshing(true);
     
     try {
-      localStorage.removeItem('votd_cached');
-      localStorage.removeItem('votd_timestamp');
-      localStorage.removeItem('votd_date');
+      // ✅ Get a random verse from local Bible
+      const randomVerse = bibleLocal.getRandomVerse();
       
-      useAppStore.setState({ isApiLoading: true });
-      
-      const response = await bibleApi.getVerseOfTheDay(true);
-      
-      console.log('📥 API Response:', response);
-      
-      if (response.success && response.data) {
+      if (randomVerse) {
         const verseData = {
-          reference: response.data.reference,
-          text: response.data.text,
-          translation: response.data.translation || 'NIV',
-          book: response.data.book || extractBookFromReference(response.data.reference),
-          chapter: response.data.chapter || extractChapterFromReference(response.data.reference),
-          verse: response.data.verse || extractVerseFromReference(response.data.reference)
+          reference: `${randomVerse.book} ${randomVerse.chapter}:${randomVerse.verse}`,
+          text: randomVerse.text,
+          translation: 'KJV',
+          book: randomVerse.book,
+          chapter: randomVerse.chapter,
+          verse: randomVerse.verse,
+          isCached: true
         };
-        
-        useAppStore.setState({ 
-          realVerseOfTheDay: verseData,
-          isApiLoading: false,
-          apiError: null
-        });
-        
-        const today = getTodayString();
-        localStorage.setItem('votd_cached', JSON.stringify(verseData));
-        localStorage.setItem('votd_timestamp', String(Date.now()));
-        localStorage.setItem('votd_date', today);
-        
-        console.log('✅ New verse loaded:', verseData.reference);
+        setVerse(verseData);
+        console.log('✅ New verse loaded locally:', verseData.reference);
         showToast(`✨ New verse: ${verseData.reference}`, 'success');
       } else {
-        throw new Error('No verse data');
+        throw new Error('No verse available');
       }
     } catch (error) {
       console.error('❌ Refresh failed:', error);
-      useAppStore.setState({ 
-        apiError: 'Failed to load verse. Please try again.',
-        isApiLoading: false
-      });
       showToast('Failed to refresh verse. Please try again.', 'error');
-      
-      // Use fallback if refresh fails
-      useFallbackVerse();
     } finally {
       setRefreshing(false);
     }
-  }, [refreshing, isApiLoading, useFallbackVerse]);
+  }, [refreshing, loading]);
 
+  // ✅ Toast notifications
   const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
     const colors = {
       success: '#4CAF50',
@@ -465,7 +251,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     }
   };
 
-  // Update greeting based on time
+  // ✅ Update greeting based on time
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour >= 5 && hour < 12) {
@@ -488,9 +274,6 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
 
   const lastReadBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
   const recentHighlights = highlights.slice(-3).reverse();
-  
-  // ✅ Get the current verse
-  const currentVerse = getCurrentVerse();
 
   const StreakFire = ({ count }: { count: number }) => (
     <div className="flex items-center gap-1">
@@ -502,17 +285,49 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
     </div>
   );
 
-  const shouldShowLoading = isInitialLoad && !currentVerse && isApiLoading;
-  const shouldShowError = apiError && !currentVerse;
-  const shouldShowVerse = currentVerse;
+  // ✅ Show loading state
+  if (loading) {
+    return (
+      <div 
+        className="h-full flex items-center justify-center"
+        style={{ backgroundColor: theme.bg, color: theme.text }}
+      >
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 mx-auto mb-4" style={{ borderColor: theme.accent }} />
+          <p className="text-sm font-medium" style={{ color: theme.textMuted }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // ✅ Show error state
+  if (error && !verse) {
+    return (
+      <div 
+        className="h-full flex items-center justify-center p-8"
+        style={{ backgroundColor: theme.bg, color: theme.text }}
+      >
+        <div className="text-center max-w-sm">
+          <div className="text-5xl mb-4">📖</div>
+          <h3 className="text-lg font-bold mb-2" style={{ color: theme.text }}>Unable to Load Verse</h3>
+          <p className="text-sm mb-6" style={{ color: theme.textMuted }}>{error}</p>
+          <button 
+            onClick={handleRefresh}
+            className="px-6 py-3 rounded-xl font-semibold"
+            style={{ backgroundColor: theme.accent, color: 'white' }}
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    // ✅ FIX: Added overflow-x-hidden to prevent horizontal scrolling
     <div
       className="h-full overflow-y-auto overflow-x-hidden"
       style={{ backgroundColor: theme.bg, color: theme.text }}
     >
-      {/* Header */}
       {/* Header */}
       <div
         className="sticky top-0 z-20 px-5 pt-6 pb-4"
@@ -528,9 +343,9 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
               Synthesis Bible
             </h1>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <div
-              className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
+              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium"
               style={{ 
                 backgroundColor: theme.surface, 
                 color: theme.textMuted, 
@@ -542,7 +357,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             </div>
             {isPro && (
               <div
-                className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold"
+                className="flex items-center gap-1 px-2 py-1 rounded-full text-xs font-bold flex-shrink-0"
                 style={{ backgroundColor: theme.accent, color: 'white' }}
               >
                 <Crown size={10} />
@@ -551,20 +366,20 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             )}
             <button
               onClick={handleRefresh}
-              disabled={refreshing || isApiLoading}
-              className="w-9 h-9 rounded-full flex items-center justify-center transition-all"
+              disabled={refreshing || loading}
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all flex-shrink-0"
               style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               aria-label="Refresh verse of the day"
             >
               <RefreshCw 
                 size={16} 
                 style={{ color: theme.textMuted }} 
-                className={refreshing || isApiLoading ? 'animate-spin' : ''}
+                className={refreshing ? 'animate-spin' : ''}
               />
             </button>
             <button
               onClick={() => navigate('settings')}
-              className="w-9 h-9 rounded-full flex items-center justify-center transition-all"
+              className="w-9 h-9 rounded-full flex items-center justify-center transition-all flex-shrink-0"
               style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               aria-label="Settings"
             >
@@ -580,7 +395,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
             className="rounded-xl p-2 text-center text-xs"
             style={{ backgroundColor: '#f59e0b20', color: '#f59e0b' }}
           >
-            📡 Offline mode - using cached verses
+            📡 Offline mode - using local verses
           </div>
         </div>
       )}
@@ -613,7 +428,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
           </div>
         </div>
 
-        {/* ✅ Daily Verse - FIXED with date change detection */}
+        {/* ✅ Daily Verse - Loaded from Local Bible */}
         <section aria-label="Daily Verse">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold uppercase tracking-widest" style={{ color: theme.textMuted }}>✦ Verse of the Day</h2>
@@ -621,89 +436,55 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
               <span className="text-xs font-medium" style={{ color: theme.textMuted }}>
                 {format(new Date(), 'MMMM d, yyyy')}
               </span>
-              {currentVerse?.isCached && (
+              {verse?.isCached && (
                 <span className="text-xs px-2 py-0.5 rounded-full" style={{ backgroundColor: theme.surface, color: theme.textFaint }}>
-                  📦 Cached
+                  📖 Local
                 </span>
               )}
             </div>
           </div>
           
-          {shouldShowLoading ? (
-            <div
-              className="rounded-2xl p-5 animate-pulse"
-              style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
-            >
-              <div className="h-3 w-24 rounded mb-3" style={{ backgroundColor: theme.surface }}></div>
-              <div className="space-y-2">
-                <div className="h-4 w-full rounded" style={{ backgroundColor: theme.surface }}></div>
-                <div className="h-4 w-3/4 rounded" style={{ backgroundColor: theme.surface }}></div>
-                <div className="h-4 w-1/2 rounded" style={{ backgroundColor: theme.surface }}></div>
-              </div>
-              <div className="flex justify-between mt-4">
-                <div className="h-3 w-32 rounded" style={{ backgroundColor: theme.surface }}></div>
-                <div className="h-3 w-20 rounded" style={{ backgroundColor: theme.surface }}></div>
-              </div>
-            </div>
-          ) : shouldShowError ? (
-            <div
-              className="rounded-2xl p-6 text-center"
-              style={{ backgroundColor: theme.card, border: `1px solid #dc2626` }}
-            >
-              <p style={{ color: '#dc2626' }}>Unable to load verse</p>
-              <p className="text-xs mt-1" style={{ color: theme.textMuted }}>{apiError}</p>
-              <button
-                onClick={handleRefresh}
-                className="mt-3 px-4 py-2 rounded-lg text-sm"
-                style={{ backgroundColor: theme.accent, color: 'white' }}
-              >
-                Retry
-              </button>
-            </div>
-          ) : shouldShowVerse ? (
-            /* ✅ Verse Card - Click to navigate to specific verse */
+          {verse ? (
             <div
               className="relative rounded-2xl p-5 overflow-hidden cursor-pointer transition-all duration-150 hover:scale-[1.01] active:scale-[0.99]"
               style={{
                 background: `linear-gradient(145deg, #7B4F2E, #A0522D, #8B3A20)`,
               }}
               onClick={() => {
-                console.log('📖 Card clicked - navigating to verse:', currentVerse.reference);
-                navigateToVerse(currentVerse, false);
+                console.log('📖 Card clicked - navigating to verse:', verse.reference);
+                navigateToVerse(verse, false);
               }}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
-                  navigateToVerse(currentVerse, false);
+                  navigateToVerse(verse, false);
                 }
               }}
             >
               <div className="absolute top-2 right-4 text-6xl opacity-10 select-none font-serif text-white">✝</div>
 
               <p className="text-xs font-bold uppercase tracking-widest mb-3 opacity-70 text-white">
-                {currentVerse.translation || 'NIV'}
-                {!currentVerse.isReal && ' 📖'}
+                {verse.translation || 'KJV'}
               </p>
               
               <blockquote
                 className="text-lg leading-relaxed mb-4 text-white"
                 style={{ fontFamily: 'Crimson Pro, serif', fontStyle: 'italic', fontWeight: 500 }}
               >
-                "{currentVerse.text}"
+                "{verse.text}"
               </blockquote>
               
               <div className="flex items-center justify-between">
-                <p className="text-sm font-bold text-white opacity-90">— {currentVerse.reference}</p>
+                <p className="text-sm font-bold text-white opacity-90">— {verse.reference}</p>
                 
-                {/* ✅ Read Chapter Button - Navigate to chapter start */}
                 <button
                   className="flex items-center gap-1.5 text-white bg-white/20 hover:bg-white/30 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:scale-105 active:scale-95"
                   onClick={(e) => {
                     e.stopPropagation();
-                    console.log('📖 Read Chapter clicked - navigating to chapter:', currentVerse.book, currentVerse.chapter);
-                    navigateToVerse(currentVerse, true);
+                    console.log('📖 Read Chapter clicked - navigating to chapter:', verse.book, verse.chapter);
+                    navigateToVerse(verse, true);
                   }}
                   type="button"
                 >
@@ -847,9 +628,7 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
                 className="rounded-2xl p-4 text-left transition-all duration-150 active:scale-[0.99]"
                 style={{ backgroundColor: theme.card, border: `1px solid ${theme.border}` }}
               >
-                <div className="flex items-center gap-2 mb-2" style={{ color: theme.accent }}>
-                  {stat.icon}
-                </div>
+                <div className="flex items-center gap-2 mb-2" style={{ color: theme.accent }}>{stat.icon}</div>
                 <p className="text-2xl font-bold" style={{ color: theme.text }}>{stat.value}</p>
                 <p className="text-xs font-medium mt-0.5" style={{ color: theme.textMuted }}>{stat.label}</p>
               </button>
@@ -893,19 +672,16 @@ const HomeScreen: React.FC<HomeScreenProps> = ({ theme, onClose, navigate }) => 
 
 // ===== HELPER FUNCTIONS =====
 
-function extractBookFromReference(reference: string): string {
-  const match = reference.match(/^[A-Za-z\s]+(?=\s+\d+:\d+)/);
-  return match ? match[0].trim() : 'John';
-}
-
-function extractChapterFromReference(reference: string): number {
-  const match = reference.match(/\d+(?=:\d+)/);
-  return match ? parseInt(match[0]) : 1;
-}
-
-function extractVerseFromReference(reference: string): number {
-  const match = reference.match(/(?<=:)\d+/);
-  return match ? parseInt(match[0]) : 1;
+function parseVerseReference(reference: string) {
+  const match = reference.match(/^([A-Za-z\s]+)\s+(\d+):(\d+)$/);
+  if (match) {
+    return {
+      book: match[1].trim(),
+      chapter: parseInt(match[2]),
+      verse: parseInt(match[3])
+    };
+  }
+  return null;
 }
 
 export default HomeScreen;

@@ -1,3 +1,5 @@
+//src/services/bibleDataService.ts
+
 // Real Bible data service that replaces the mock DAILY_VERSES
 import { bibleApi } from './bibleApiClient';
 
