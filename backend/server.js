@@ -840,6 +840,21 @@ app.get('/api/bible/votd', (req, res) => {
   });
 });
 
+
+// backend/server.js - Add this endpoint
+app.get('/api/firebase-debug', (req, res) => {
+  res.json({
+    firebaseAvailable: isFirebaseAvailable,
+    credentials: {
+      goog_application_credentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set',
+      firebase_project_id: process.env.FIREBASE_PROJECT_ID || 'not set',
+      firebase_client_email: process.env.FIREBASE_CLIENT_EMAIL || 'not set',
+      firebase_private_key: process.env.FIREBASE_PRIVATE_KEY ? 'set (length: ' + process.env.FIREBASE_PRIVATE_KEY.length + ')' : 'not set'
+    },
+    node_env: process.env.NODE_ENV || 'not set'
+  });
+});
+
 // backend/server.js
 app.get('/api/firebase-test', async (req, res) => {
   try {
