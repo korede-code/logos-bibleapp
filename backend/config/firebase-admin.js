@@ -1,91 +1,95 @@
-// backend/config/firebase-admin.js
-const fs = require('fs');
-
-// ✅ For v14+, import from the main package
 const admin = require('firebase-admin');
+const fs = require('fs');
+const path = require('path');
+
+console.log('🔧 Initializing Firebase Admin SDK...');
+console.log('🔍 Environment variables check:');
+console.log('FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID ? '✓ set' : '✗ missing');
+console.log('FIREBASE_PRIVATE_KEY:', process.env.FIREBASE_PRIVATE_KEY ? '✓ set (' + process.env.FIREBASE_PRIVATE_KEY.length + ' chars)' : '✗ missing');
+console.log('FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL ? '✓ set' : '✗ missing');
+console.log('FIREBASE_CLIENT_CERT_URL:', process.env.FIREBASE_CLIENT_CERT_URL ? '✓ set' : '✗ missing');
+
 
 let db = null;
 let isFirebaseAvailable = false;
 
 try {
-  console.log('🔍 Initializing Firebase Admin SDK...');
-  console.log('📁 firebase-admin version:', admin.SDK_VERSION || 'unknown');
-  
-  // ✅ Check if we can access cert
-  const cert = admin.credential ? admin.credential.cert : (admin.cert || null);
-  
-  if (!cert) {
-    console.error('❌ cert function not available');
-    console.log('📁 Available admin properties:', Object.keys(admin));
-    console.log('📁 Available admin.credential:', admin.credential ? Object.keys(admin.credential) : 'undefined');
-    throw new Error('cert function not available');
+  // Check if the module loaded
+  if (!admin) {
+    console.error('❌ firebase-admin module failed to load');
+    throw new Error('Module not loaded');
   }
+
+  console.log('✅ firebase-admin module loaded');
+
+  // Try to get service account
+  let serviceAccount = null;
   
-  // ✅ Method 1: Using service account file
-  const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  
-  if (credentialsPath && fs.existsSync(credentialsPath)) {
-    console.log(`✅ Credentials file found: ${credentialsPath}`);
-    
-    const serviceAccount = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
-    console.log('📁 Project:', serviceAccount.project_id);
-    console.log('📁 Client Email:', serviceAccount.client_email);
-    
-    // ✅ Initialize using the correct method
-    admin.initializeApp({
-      credential: cert(serviceAccount),
-    });
-    
-    db = admin.firestore();
-    isFirebaseAvailable = true;
-    console.log('✅ Firebase initialized with service account');
-    
-  } else {
-    console.log('⚠️ No credentials file found');
-    
-    // ✅ Method 2: Using environment variables
-    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
-      console.log('📁 Trying environment variables...');
-      
-      // ✅ Clean the private key
-      let privateKey = process.env.FIREBASE_PRIVATE_KEY;
-      if (privateKey.includes('\\n')) {
-        privateKey = privateKey.replace(/\\n/g, '\n');
-      }
-      
-      const serviceAccount = {
-        type: "service_account",
-        project_id: process.env.FIREBASE_PROJECT_ID,
-        private_key: privateKey,
-        client_email: process.env.FIREBASE_CLIENT_EMAIL,
-        private_key_id: process.env.FIREBASE_PRIVATE_KEY_ID || '',
-        client_id: process.env.FIREBASE_CLIENT_ID || '',
-        auth_uri: "https://accounts.google.com/o/oauth2/auth",
-        token_uri: "https://oauth2.googleapis.com/token",
-        auth_provider_x509_cert_url: "https://www.googleapis.com/oauth2/v1/certs",
-        client_x509_cert_url: process.env.FIREBASE_CLIENT_CERT_URL || ''
-      };
-      
-      admin.initializeApp({
-        credential: cert(serviceAccount),
-      });
-      
-      db = admin.firestore();
-      isFirebaseAvailable = true;
-      console.log('✅ Firebase initialized with environment variables');
+  // Option 1: From environment variable (Render)
+  if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+    console.log('📝 Trying FIREBASE_SERVICE_ACCOUNT from environment...');
+    try {
+      serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+      console.log('✅ Parsed service account from environment');
+    } catch (e) {
+      console.error('❌ Failed to parse FIREBASE_SERVICE_ACCOUNT:', e.message);
     }
   }
   
-  if (!isFirebaseAvailable) {
-    console.log('⚠️ Firebase not available - using JSON file fallback');
+  // Option 2: From local file (development)
+  if (!serviceAccount) {
+    const localPath = path.join(__dirname, '..', 'service-account.json');
+    if (fs.existsSync(localPath)) {
+      console.log('📝 Trying local service account file:', localPath);
+      try {
+        serviceAccount = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+        console.log('✅ Loaded local service account file');
+      } catch (e) {
+        console.error('❌ Failed to read local file:', e.message);
+      }
+    }
+  }
+  
+  // Option 3: From individual environment variables
+  if (!serviceAccount && process.env.FIREBASE_PROJECT_ID) {
+    console.log('📝 Trying individual Firebase environment variables...');
+    const privateKey = process.env.FIREBASE_PRIVATE_KEY
+      ? process.env.FIREBASE_PRIVATE_KEY.replace(/\\n/g, '\n')
+      : undefined;
+    
+    if (process.env.FIREBASE_PROJECT_ID && privateKey && process.env.FIREBASE_CLIENT_EMAIL) {
+      serviceAccount = {
+        projectId: process.env.FIREBASE_PROJECT_ID,
+        privateKey: privateKey,
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+      };
+      console.log('✅ Loaded individual environment variables');
+    }
+  }
+  
+  // Initialize Firebase if we have service account
+  if (serviceAccount) {
+    console.log('📝 Initializing Firebase Admin SDK...');
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+      databaseURL: process.env.FIREBASE_DATABASE_URL || `https://${serviceAccount.project_id}.firebaseio.com`,
+    });
+    console.log('✅ Firebase Admin initialized successfully');
+    
+    db = admin.firestore();
+    isFirebaseAvailable = true;
+    console.log('✅ Firestore is ready');
+  } else {
+    console.warn('⚠️ No service account found - Firebase is disabled');
   }
   
 } catch (error) {
-  console.error('❌ Firebase init error:', error.message);
-  console.error('❌ Stack:', error.stack);
+  console.error('❌ Firebase initialization error:', error.message);
+  console.warn('⚠️ Firebase is disabled - using JSON file fallback');
 }
 
 module.exports = {
-  db: db,
-  isFirebaseAvailable: isFirebaseAvailable
+  admin,
+  db,
+  isFirebaseAvailable,
 };
