@@ -1,12 +1,36 @@
 // backend/config/firebase-admin.js
-const admin = require('firebase-admin');
 const fs = require('fs');
+
+// ✅ Try different import methods
+let admin;
+try {
+  // Method 1: Standard require
+  admin = require('firebase-admin');
+  console.log('✅ firebase-admin loaded via require');
+} catch (e) {
+  console.log('⚠️ Standard require failed, trying alternative...');
+  try {
+    // Method 2: Dynamic import (for ES modules)
+    admin = require('firebase-admin/app');
+  } catch (e2) {
+    console.error('❌ Failed to load firebase-admin');
+    process.exit(1);
+  }
+}
 
 let db = null;
 let isFirebaseAvailable = false;
 
 try {
   console.log('🔍 Initializing Firebase Admin SDK...');
+  console.log('📁 firebase-admin version:', admin.SDK_VERSION || 'unknown');
+  
+  // ✅ Check if credential is available
+  if (!admin.credential) {
+    console.error('❌ admin.credential is undefined');
+    console.log('📁 Available properties:', Object.keys(admin));
+    throw new Error('admin.credential not available');
+  }
   
   // ✅ Read credentials from file
   const credentialsPath = process.env.GOOGLE_APPLICATION_CREDENTIALS;
@@ -16,8 +40,9 @@ try {
     
     const serviceAccount = JSON.parse(fs.readFileSync(credentialsPath, 'utf8'));
     console.log('📁 Project:', serviceAccount.project_id);
+    console.log('📁 Client Email:', serviceAccount.client_email);
     
-    // ✅ Initialize
+    // ✅ Initialize with explicit credential
     admin.initializeApp({
       credential: admin.credential.cert(serviceAccount),
     });
@@ -58,6 +83,7 @@ try {
   
 } catch (error) {
   console.error('❌ Firebase init error:', error.message);
+  console.error('❌ Stack:', error.stack);
 }
 
 module.exports = {
