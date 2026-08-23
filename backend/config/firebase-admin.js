@@ -1,6 +1,13 @@
 // backend/config/firebase-admin.js
 const fs = require('fs');
 
+// Add this at the top of firebase-admin.js
+console.log('🔍 Environment variables check:');
+console.log('FIREBASE_PROJECT_ID:', process.env.FIREBASE_PROJECT_ID ? '✓ set' : '✗ missing');
+console.log('FIREBASE_PRIVATE_KEY:', process.env.FIREBASE_PRIVATE_KEY ? '✓ set (' + process.env.FIREBASE_PRIVATE_KEY.length + ' chars)' : '✗ missing');
+console.log('FIREBASE_CLIENT_EMAIL:', process.env.FIREBASE_CLIENT_EMAIL ? '✓ set' : '✗ missing');
+console.log('FIREBASE_CLIENT_CERT_URL:', process.env.FIREBASE_CLIENT_CERT_URL ? '✓ set' : '✗ missing');
+
 // ✅ Try different import methods
 let admin;
 try {
