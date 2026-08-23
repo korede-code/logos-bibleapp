@@ -840,6 +840,37 @@ app.get('/api/bible/votd', (req, res) => {
   });
 });
 
+// backend/server.js
+app.get('/api/firebase-test', async (req, res) => {
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.json({ 
+        success: false, 
+        message: 'Firebase not available',
+        isAvailable: false
+      });
+    }
+    
+    // Try to write a test document
+    await db.collection('_test').doc('test').set({
+      timestamp: new Date().toISOString(),
+      message: 'Firebase is working!'
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Firebase is working!',
+      isAvailable: true
+    });
+  } catch (error) {
+    res.json({ 
+      success: false, 
+      message: error.message,
+      isAvailable: false
+    });
+  }
+});
+
 // Text-to-Speech proxy
 app.get('/api/tts', async (req, res) => {
   const { text } = req.query;
