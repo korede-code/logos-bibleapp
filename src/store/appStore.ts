@@ -39,6 +39,7 @@ export interface Highlight {
   book: string;
   chapter: number;
   verse: number;
+  text?: string; // ✅ Add optional text field
   color: HighlightColor;
   style: 'highlight' | 'underline';
   createdAt: number;
@@ -405,10 +406,58 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   highlights: persisted?.highlights ?? [
-    { id: 'h1', bookId: 43, book: 'John', chapter: 3, verse: 16, color: 'yellow', style: 'highlight', createdAt: Date.now() - 86400000, updatedAt: Date.now() - 86400000, vectorClock: 1 },
-    { id: 'h2', bookId: 19, book: 'Psalms', chapter: 23, verse: 1, color: 'blue', style: 'highlight', createdAt: Date.now() - 172800000, updatedAt: Date.now() - 172800000, vectorClock: 1 },
-    { id: 'h3', bookId: 45, book: 'Romans', chapter: 8, verse: 28, color: 'green', style: 'highlight', createdAt: Date.now() - 259200000, updatedAt: Date.now() - 259200000, vectorClock: 1 },
-    { id: 'h4', bookId: 50, book: 'Philippians', chapter: 4, verse: 13, color: 'pink', style: 'underline', createdAt: Date.now() - 345600000, updatedAt: Date.now() - 345600000, vectorClock: 1 },
+    { 
+      id: 'h1', 
+      bookId: 43, 
+      book: 'John', 
+      chapter: 3, 
+      verse: 16, 
+      text: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
+      color: 'yellow', 
+      style: 'highlight', 
+      createdAt: Date.now() - 86400000, 
+      updatedAt: Date.now() - 86400000, 
+      vectorClock: 1 
+    },
+    { 
+      id: 'h2', 
+      bookId: 19, 
+      book: 'Psalms', 
+      chapter: 23, 
+      verse: 1, 
+      text: 'The LORD is my shepherd; I shall not want.',
+      color: 'blue', 
+      style: 'highlight', 
+      createdAt: Date.now() - 172800000, 
+      updatedAt: Date.now() - 172800000, 
+      vectorClock: 1 
+    },
+    { 
+      id: 'h3', 
+      bookId: 45, 
+      book: 'Romans', 
+      chapter: 8, 
+      verse: 28, 
+      text: 'And we know that all things work together for good to them that love God, to them who are the called according to his purpose.',
+      color: 'green', 
+      style: 'highlight', 
+      createdAt: Date.now() - 259200000, 
+      updatedAt: Date.now() - 259200000, 
+      vectorClock: 1 
+    },
+    { 
+      id: 'h4', 
+      bookId: 50, 
+      book: 'Philippians', 
+      chapter: 4, 
+      verse: 13, 
+      text: 'I can do all things through Christ which strengtheneth me.',
+      color: 'pink', 
+      style: 'underline', 
+      createdAt: Date.now() - 345600000, 
+      updatedAt: Date.now() - 345600000, 
+      vectorClock: 1 
+    },
   ],
 
   notes: persisted?.notes ?? [

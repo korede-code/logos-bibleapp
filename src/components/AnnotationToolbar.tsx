@@ -110,6 +110,19 @@ const AnnotationToolbar: React.FC = () => {
       return;
     }
 
+    // ✅ Get verse texts from DOM
+    const verseTexts: Record<number, string> = {};
+    selectedVerses.forEach(verseKey => {
+      const [bookId, chapter, verse] = verseKey.split(':');
+      const verseElement = document.getElementById(`verse-${verse}`);
+      if (verseElement) {
+        const textSpan = verseElement.querySelector('span[role="button"]');
+        if (textSpan) {
+          verseTexts[parseInt(verse)] = textSpan.textContent?.trim() || '';
+        }
+      }
+    });
+
     verseData.verses.forEach(verse => {
       const existingHighlight = highlights.find(
         h => h.bookId === verse.bookId && 
@@ -121,11 +134,15 @@ const AnnotationToolbar: React.FC = () => {
         removeHighlight(existingHighlight.id);
       }
 
+      // ✅ Get the verse text
+      const verseText = verseTexts[verse.verse] || '';
+
       addHighlight({
         bookId: verse.bookId,
         book: verseData.bookName,
         chapter: verse.chapter,
         verse: verse.verse,
+        text: verseText, // ✅ Store the verse text
         color: color,
         style: style,
       });

@@ -2,6 +2,8 @@
   "appId": "com.logosdaily.app",
   "appName": "Synthesis Bible",
   "webDir": "dist",
+  "appVersion": "1.2.0",
+  "appBuild": "12",
   "server": {
     "androidScheme": "https",
     "cleartext": true,

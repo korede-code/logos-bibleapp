@@ -4,6 +4,7 @@ import { ArrowLeft, Star, Trash2, ChevronRight, Search, X } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
 import { BIBLE_BOOKS } from '../data/bibleData';
+import { bibleLocal } from '../services/bibleLocalService'; // ✅ Import local Bible
 
 const HIGHLIGHT_COLORS: Record<string, { bg: string; border: string; text: string }> = {
   yellow: { bg: '#FEF08A40', border: '#EAB308', text: '#854D0E' },
@@ -22,40 +23,39 @@ const HighlightsScreen: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [verseTexts, setVerseTexts] = useState<Record<string, string>>({});
 
-  // Fetch verse text for each highlight
+  // ✅ Load verse texts for highlights that don't have text stored
   useEffect(() => {
-    const fetchVerseTexts = async () => {
+    const loadVerseTexts = async () => {
       const texts: Record<string, string> = {};
       
       for (const highlight of highlights) {
         const key = `${highlight.bookId}:${highlight.chapter}:${highlight.verse}`;
         
-        if (!verseTexts[key]) {
-          try {
-            const response = await fetch(
-              `https://logos-daily-backend.onrender.com/api/bible/${encodeURIComponent(highlight.book)}/${highlight.chapter}?translation=kjv`
-            );
-            const data = await response.json();
-            
-            if (data.success && data.data) {
-              const verse = data.data.find((v: any) => v.verse === highlight.verse);
-              if (verse) {
-                texts[key] = verse.text;
-              }
-            }
-          } catch (e) {
-            console.error('Failed to fetch verse text:', e);
+        // ✅ If highlight already has text, use it
+        if (highlight.text) {
+          texts[key] = highlight.text;
+          continue;
+        }
+        
+        // ✅ Try to get from local Bible
+        try {
+          const localVerse = bibleLocal.getVerse(highlight.book, highlight.chapter, highlight.verse);
+          if (localVerse) {
+            texts[key] = localVerse.text;
+            continue;
           }
+        } catch (e) {
+          console.log('Local Bible lookup failed for:', highlight.book, highlight.chapter, highlight.verse);
         }
       }
       
-      setVerseTexts(prev => ({ ...prev, ...texts }));
+      setVerseTexts(texts);
     };
 
     if (highlights.length > 0) {
-      fetchVerseTexts();
+      loadVerseTexts();
     }
-  }, [highlights.length]);
+  }, [highlights]);
 
   // Filter highlights by color and search
   const filteredHighlights = highlights.filter(h => {
@@ -83,9 +83,32 @@ const HighlightsScreen: React.FC = () => {
     navigate('reader');
   };
 
+  // ✅ Get verse text - use stored text, local Bible, or fallback
   const getVerseText = (highlight: typeof highlights[0]): string => {
     const key = `${highlight.bookId}:${highlight.chapter}:${highlight.verse}`;
-    return verseTexts[key] || 'Loading verse...';
+    
+    // 1. Check if text is stored in the highlight
+    if (highlight.text) {
+      return highlight.text;
+    }
+    
+    // 2. Check if we loaded it from local Bible
+    if (verseTexts[key]) {
+      return verseTexts[key];
+    }
+    
+    // 3. Fallback - try to get from local Bible directly
+    try {
+      const localVerse = bibleLocal.getVerse(highlight.book, highlight.chapter, highlight.verse);
+      if (localVerse) {
+        return localVerse.text;
+      }
+    } catch (e) {
+      // Ignore
+    }
+    
+    // 4. Final fallback
+    return 'Loading verse...';
   };
 
   return (
@@ -212,7 +235,7 @@ const HighlightsScreen: React.FC = () => {
                                 {highlight.style === 'underline' ? 'Underline' : 'Highlight'}
                               </span>
                             </div>
-                            {/* ✅ Actual verse text */}
+                            {/* ✅ Display verse text */}
                             <div
                               className="text-sm leading-relaxed p-3 rounded-lg"
                               style={{

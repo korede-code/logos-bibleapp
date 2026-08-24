@@ -19,6 +19,12 @@ service-account.json
 *.cert
 *.json.key
 
+# Add these to your .gitignore
+*.keystore
+*.jks
+keystore.properties
+gradle.properties
+
 # Logs
 logs/
 *.log
