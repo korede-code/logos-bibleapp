@@ -8,14 +8,30 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme } from '../utils/themeUtils';
+import { usePreferences } from '../contexts/PreferencesContext';
 
 interface ReaderSettingsPanelProps {
   onClose: () => void;
+  // Optional: allow external control of preferences
+  preferences?: any;
+  onUpdate?: (key: string, value: any) => void;
+  isSaving?: boolean;
 }
 
-const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) => {
+const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ 
+  onClose,
+  preferences: externalPreferences,
+  onUpdate: externalOnUpdate,
+  isSaving: externalIsSaving
+}) => {
   const { readerSettings, updateReaderSettings, isPro } = useAppStore();
   const theme = getTheme(readerSettings.theme);
+  
+  // Use external preferences if provided, otherwise use the hook
+  const preferencesHook = usePreferences();
+  const preferences = externalPreferences || preferencesHook.preferences;
+  const updatePreference = externalOnUpdate || preferencesHook.updatePreference;
+  const isSaving = externalIsSaving || preferencesHook.isSaving;
   
   const [translations, setTranslations] = useState<any[]>([]);
   const [loadingTranslations, setLoadingTranslations] = useState(false);
@@ -82,9 +98,36 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
       background: ${colors[type]}; color: white; padding: 10px 20px;
       border-radius: 10px; z-index: 1000; font-size: 14px;
       animation: fadeInUp 0.3s ease;
+      max-width: 90%;
     `;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+  };
+
+  // Handle updates with both local and backend sync
+  const handleUpdate = (key: string, value: any) => {
+    // Update local state (app store)
+    updateReaderSettings({ [key]: value });
+    
+    // Update backend preferences if available
+    if (updatePreference) {
+      // Map reader settings keys to preference keys
+      const preferenceKeyMap: Record<string, string> = {
+        'translation': 'translation',
+        'theme': 'theme',
+        'fontSize': 'fontSize',
+        'showVerseNumbers': 'showVerseNumbers',
+        // Add more mappings as needed
+      };
+      
+      const prefKey = preferenceKeyMap[key];
+      if (prefKey) {
+        updatePreference(prefKey as any, value).catch((err: any) => {
+          console.error('Failed to save preference:', err);
+          showToast('Failed to save setting to cloud', 'error');
+        });
+      }
+    }
   };
 
   const themes = [
@@ -112,19 +155,6 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
   const currentLineSpacing = readerSettings.lineSpacing || 1.8;
   const currentMargin = readerSettings.marginWidth || 24;
 
-  const getFontSizeLabel = (size: number) => {
-    if (size <= 14) return 'Small';
-    if (size <= 18) return 'Normal';
-    if (size <= 24) return 'Large';
-    return 'X-Large';
-  };
-
-  const getLineSpacingLabel = (spacing: number) => {
-    if (spacing <= 1.4) return 'Compact';
-    if (spacing <= 1.8) return 'Normal';
-    return 'Relaxed';
-  };
-
   const SettingSection = ({ title, children }: { title: string; children: React.ReactNode }) => (
     <div className="mb-6">
       <h3 className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: theme.textMuted }}>
@@ -150,6 +180,9 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
           <div className="flex items-center gap-2">
             <Palette size={18} style={{ color: theme.accent }} />
             <h2 className="text-lg font-bold" style={{ color: theme.text }}>Reader Settings</h2>
+            {isSaving && (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 ml-2" style={{ borderColor: theme.accent }} />
+            )}
           </div>
           <button
             onClick={onClose}
@@ -168,7 +201,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               {themes.map((t) => (
                 <button
                   key={t.id}
-                  onClick={() => updateReaderSettings({ theme: t.id as any })}
+                  onClick={() => handleUpdate('theme', t.id as any)}
+                  disabled={isSaving}
                   className={`p-3 rounded-xl text-center transition-all ${
                     readerSettings.theme === t.id ? 'ring-2' : ''
                   }`}
@@ -198,7 +232,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               {fontFamilies.map((font) => (
                 <button
                   key={font.id}
-                  onClick={() => updateReaderSettings({ fontFamily: font.id as any })}
+                  onClick={() => handleUpdate('fontFamily', font.id as any)}
+                  disabled={isSaving}
                   className={`px-3 py-2 rounded-lg text-sm transition-all ${
                     readerSettings.fontFamily === font.id ? 'text-white' : ''
                   }`}
@@ -219,7 +254,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
           <SettingSection title="Font Size">
             <div className="flex items-center gap-4">
               <button
-                onClick={() => updateReaderSettings({ fontSize: Math.max(14, currentFontSize - 2) })}
+                onClick={() => handleUpdate('fontSize', Math.max(14, currentFontSize - 2))}
+                disabled={isSaving}
                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -234,7 +270,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                 </div>
               </div>
               <button
-                onClick={() => updateReaderSettings({ fontSize: Math.min(32, currentFontSize + 2) })}
+                onClick={() => handleUpdate('fontSize', Math.min(32, currentFontSize + 2))}
+                disabled={isSaving}
                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -248,9 +285,10 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                 max="32"
                 step="1"
                 value={currentFontSize}
-                onChange={(e) => updateReaderSettings({ fontSize: parseInt(e.target.value) })}
+                onChange={(e) => handleUpdate('fontSize', parseInt(e.target.value))}
                 className="w-full"
                 style={{ accentColor: theme.accent }}
+                disabled={isSaving}
               />
             </div>
           </SettingSection>
@@ -261,8 +299,9 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               <button
                 onClick={() => {
                   const idx = lineSpacingOptions.indexOf(currentLineSpacing);
-                  if (idx > 0) updateReaderSettings({ lineSpacing: lineSpacingOptions[idx - 1] });
+                  if (idx > 0) handleUpdate('lineSpacing', lineSpacingOptions[idx - 1]);
                 }}
+                disabled={isSaving}
                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -281,8 +320,9 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               <button
                 onClick={() => {
                   const idx = lineSpacingOptions.indexOf(currentLineSpacing);
-                  if (idx < lineSpacingOptions.length - 1) updateReaderSettings({ lineSpacing: lineSpacingOptions[idx + 1] });
+                  if (idx < lineSpacingOptions.length - 1) handleUpdate('lineSpacing', lineSpacingOptions[idx + 1]);
                 }}
+                disabled={isSaving}
                 className="w-10 h-10 rounded-xl flex items-center justify-center transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -296,9 +336,10 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                 max="2.5"
                 step="0.1"
                 value={currentLineSpacing}
-                onChange={(e) => updateReaderSettings({ lineSpacing: parseFloat(e.target.value) })}
+                onChange={(e) => handleUpdate('lineSpacing', parseFloat(e.target.value))}
                 className="w-full"
                 style={{ accentColor: theme.accent }}
+                disabled={isSaving}
               />
             </div>
           </SettingSection>
@@ -309,7 +350,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               {marginWidths.map((width) => (
                 <button
                   key={width}
-                  onClick={() => updateReaderSettings({ marginWidth: width })}
+                  onClick={() => handleUpdate('marginWidth', width)}
+                  disabled={isSaving}
                   className={`px-3 py-2 rounded-lg text-xs transition-all flex-1 ${
                     currentMargin === width ? 'text-white' : ''
                   }`}
@@ -325,7 +367,7 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
             </div>
           </SettingSection>
 
-          {/* Bible Translation Section - FIXED */}
+          {/* Bible Translation Section */}
           <SettingSection title="Bible Translation">
             {loadingTranslations ? (
               <div className="flex justify-center py-4">
@@ -354,9 +396,10 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                       showToast('This translation requires a Pro subscription. Upgrade to access.', 'info');
                       return;
                     }
-                    updateReaderSettings({ translation: t.code });
+                    handleUpdate('translation', t.code);
                     showToast(`Switched to ${t.name}`, 'success');
                   }}
+                  disabled={isSaving || (t.requiresPro && !isPro)}
                   className={`w-full flex items-center justify-between p-3 rounded-xl transition-all ${
                     readerSettings.translation === t.code ? 'ring-2' : ''
                   }`}
@@ -365,7 +408,6 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
                     border: `1px solid ${readerSettings.translation === t.code ? theme.accent : theme.border}`,
                     opacity: t.requiresPro && !isPro ? 0.6 : 1,
                   }}
-                  disabled={t.requiresPro && !isPro}
                 >
                   <div className="flex-1 text-left">
                     <div className="flex items-center gap-2">
@@ -395,7 +437,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
           <SettingSection title="Display Options">
             <div className="space-y-2">
               <button
-                onClick={() => updateReaderSettings({ showVerseNumbers: !readerSettings.showVerseNumbers })}
+                onClick={() => handleUpdate('showVerseNumbers', !readerSettings.showVerseNumbers)}
+                disabled={isSaving}
                 className="w-full flex items-center justify-between p-3 rounded-xl transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -409,7 +452,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               </button>
 
               <button
-                onClick={() => updateReaderSettings({ redLetterText: !readerSettings.redLetterText })}
+                onClick={() => handleUpdate('redLetterText', !readerSettings.redLetterText)}
+                disabled={isSaving}
                 className="w-full flex items-center justify-between p-3 rounded-xl transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >
@@ -423,7 +467,8 @@ const ReaderSettingsPanel: React.FC<ReaderSettingsPanelProps> = ({ onClose }) =>
               </button>
 
               <button
-                onClick={() => updateReaderSettings({ showCrossReferences: !readerSettings.showCrossReferences })}
+                onClick={() => handleUpdate('showCrossReferences', !readerSettings.showCrossReferences)}
+                disabled={isSaving}
                 className="w-full flex items-center justify-between p-3 rounded-xl transition-all"
                 style={{ backgroundColor: theme.surface, border: `1px solid ${theme.border}` }}
               >

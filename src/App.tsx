@@ -3,13 +3,18 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Capacitor } from '@capacitor/core';
 import { App as CapacitorApp } from '@capacitor/app';
 import { useAppStore } from './store/appStore';
-import { onAuthChange } from './config/firebase';
+import { auth, db, onAuthChange } from './config/firebase';
+import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
+
+// Import Preferences Provider
+import { PreferencesProvider } from './contexts/PreferencesContext';
 
 // ✅ UNCOMMENT ALL THESE IMPORTS
 import HomeScreen from './components/HomeScreen';
 import ReaderScreen from './components/ReaderScreen';
 import SearchScreen from './components/SearchScreen';
 import ReadingPlansScreen from './components/ReadingPlansScreen';
+import FavoritesScreen from './components/FavoritesScreen';
 import NotesScreen from './components/NotesScreen';
 import PrayerScreen from './components/PrayerScreen';
 import ProgressScreen from './components/ProgressScreen';
@@ -36,6 +41,7 @@ type AppScreen =
   | 'progress'
   | 'bookmarks'
   | 'groups'
+  | 'favorites'
   | 'settings'
   | 'highlights';
 
@@ -47,6 +53,7 @@ interface ScreenProps {
 
 const SCREENS: Record<AppScreen, React.ComponentType<ScreenProps>> = {
   home: HomeScreen,
+  favorites: FavoritesScreen,
   reader: ReaderScreen,
   search: SearchScreen,
   plans: ReadingPlansScreen,
@@ -59,22 +66,49 @@ const SCREENS: Record<AppScreen, React.ComponentType<ScreenProps>> = {
   highlights: HighlightsScreen,
 };
 
-const App: React.FC = () => {
-  // ✅ ALL HOOKS MUST BE CALLED BEFORE ANY CONDITIONAL RETURN
+
+const getCurrentUserId = (): string | null => {
+  // First try: Get from Firebase auth (most reliable)
+  const user = auth.currentUser;
+  if (user && user.uid) {
+    return user.uid;
+  }
+  
+  // Second try: Check localStorage for current user
+  const storedUser = localStorage.getItem('currentUserId');
+  if (storedUser) {
+    return storedUser;
+  }
+  
+  // Third try: Check for user data
+  const userData = localStorage.getItem('logos_user');
+  if (userData) {
+    try {
+      const parsed = JSON.parse(userData);
+      return parsed.uid || null;
+    } catch (e) {
+      return null;
+    }
+  }
+  
+  // Fallback: Return null (user not logged in)
+  console.warn('No user ID found - user may not be logged in');
+  return null;
+};
+
+// Main App Content (your existing app logic)
+const AppContent: React.FC = () => {
+  // ✅ ALL YOUR EXISTING HOOKS
   const { currentScreen, readerSettings, setCurrentUser, setProStatus, navigate } = useAppStore();
   const theme = getTheme(readerSettings.theme);
   
-  // ✅ Use a ref to track render count without causing re-renders
   const renderCount = useRef(0);
   renderCount.current += 1;
   
-  // ✅ Track if this is the first render
   const isFirstRender = useRef(true);
-  
-  // ✅ Store the loop detection state in state (not in render)
   const [hasLoopError, setHasLoopError] = useState(false);
 
-  // ✅ ALL useEffects must be called before any conditional return
+  // ✅ ALL YOUR EXISTING useEffect hooks
   useEffect(() => {
     if (renderCount.current > 10 && isFirstRender.current) {
       isFirstRender.current = false;
@@ -83,7 +117,6 @@ const App: React.FC = () => {
     }
   }, []);
 
-  // ✅ Capacitor listeners
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
       console.log('🌐 Running on web - skipping native listeners');
@@ -111,12 +144,48 @@ const App: React.FC = () => {
     };
   }, [navigate, setProStatus]);
 
-  // 🔥 Auth listener
+  // 🔥 Auth listener with Firestore document creation
   useEffect(() => {
     const unsubscribe = onAuthChange(async (user) => {
       console.log('App: Auth state changed', user?.email);
-    
+      
       if (user) {
+        // ✅ Check if user has a Firestore document
+        try {
+          const userDoc = await getDoc(doc(db, 'users', user.uid));
+          
+          if (!userDoc.exists()) {
+            console.log('⚠️ User exists in Auth but not in Firestore. Creating document...');
+            
+            // Create Firestore document for existing user
+            await setDoc(doc(db, 'users', user.uid), {
+              uid: user.uid,
+              email: user.email || '',
+              displayName: user.displayName || user.email?.split('@')[0] || 'User',
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+              isPro: false,
+              preferences: {
+                translation: 'KJV',
+                fontSize: 'medium',
+                theme: 'light',
+                showVerseNumbers: true,
+                autoPlayAudio: false,
+                readingPlan: null,
+                dailyReminder: false,
+                reminderTime: '09:00'
+              },
+              favorites: []
+            });
+            console.log('✅ Firestore document created for existing user:', user.uid);
+          } else {
+            console.log('📝 Firestore document already exists for:', user.uid);
+          }
+        } catch (err) {
+          console.error('❌ Error checking/creating Firestore document:', err);
+        }
+        
+        // Continue with existing auth logic
         const userData = {
           uid: user.uid,
           email: user.email,
@@ -192,6 +261,7 @@ const App: React.FC = () => {
     };
   }, [setProStatus, setCurrentUser]);
 
+
   // 🔥 App focus handler for pending Pro status
   useEffect(() => {
     const handleFocus = () => {
@@ -223,7 +293,7 @@ const App: React.FC = () => {
     NotificationService.init();
   }, []);
 
-  // ✅ DEBUG: Log render count (but don't cause infinite loop)
+  // ✅ DEBUG: Log render count
   console.log(`🔄 App render #${renderCount.current}`);
 
   // ✅ CHECK FOR LOOP ERROR AFTER ALL HOOKS
@@ -301,6 +371,18 @@ const App: React.FC = () => {
       </div>
       {!hideNav && <BottomNav />}
     </div>
+  );
+};
+
+// Main App Wrapper with Preferences Provider
+const App: React.FC = () => {
+  const userId = getCurrentUserId();
+  console.log('📱 App wrapper - User ID:', userId);
+
+  return (
+    <PreferencesProvider userId={userId}>
+      <AppContent />
+    </PreferencesProvider>
   );
 };
 

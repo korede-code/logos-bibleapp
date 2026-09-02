@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect } from 'react';
 import { X, Mail, Lock, Eye, EyeOff, CheckCircle, Globe, User } from 'lucide-react';
+import { doc, setDoc, serverTimestamp } from 'firebase/firestore';
+import { db } from '../config/firebase'; // Make sure you have this import
 import { auth } from '../config/firebase';
 import { 
   GoogleAuthProvider, 
@@ -63,6 +65,44 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     console.log('Auth success', userData);
   };
 
+  // ✅ Helper function to create Firestore document for any user
+  const createUserFirestoreDocument = async (user: any) => {
+    if (!user) return;
+    
+    try {
+      // Check if document already exists
+      const userDoc = await getDoc(doc(db, 'users', user.uid));
+      if (userDoc.exists()) {
+        console.log('📝 Firestore document already exists for:', user.uid);
+        return;
+      }
+      
+      // Create document
+      await setDoc(doc(db, 'users', user.uid), {
+        uid: user.uid,
+        email: user.email || '',
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+        isPro: false,
+        preferences: {
+          translation: 'KJV',
+          fontSize: 'medium',
+          theme: 'light',
+          showVerseNumbers: true,
+          autoPlayAudio: false,
+          readingPlan: null,
+          dailyReminder: false,
+          reminderTime: '09:00'
+        },
+        favorites: []
+      });
+      console.log('✅ Firestore document created for:', user.uid);
+    } catch (err) {
+      console.error('❌ Failed to create Firestore document:', err);
+    }
+  };
+
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError('');
@@ -93,6 +133,7 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     }
   };
 
+  // ✅ UPDATED: Use signUpWithEmail for sign-up
   const handleEmailSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -102,12 +143,10 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
       let result;
       
       if (mode === 'signup') {
-        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-        if (displayName) {
-          await updateProfile(userCredential.user, { displayName });
-        }
-        result = { success: true, user: userCredential.user };
+        // ✅ Use the signUpWithEmail function that creates Firestore document
+        result = await signUpWithEmail(email, password, displayName);
       } else {
+        // Sign in
         const userCredential = await signInWithEmailAndPassword(auth, email, password);
         result = { success: true, user: userCredential.user };
       }
@@ -115,8 +154,13 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
       if (result.success && result.user) {
         handleAuthSuccess(result.user);
         if (onSuccess) onSuccess(result.user);
-        showToast(mode === 'signup' ? `Welcome ${displayName || email}!` : 'Welcome back!', '#4CAF50');
+        showToast(
+          mode === 'signup' ? `Welcome ${displayName || email}!` : 'Welcome back!', 
+          '#4CAF50'
+        );
         onClose();
+      } else if (result.error) {
+        setError(result.error);
       }
     } catch (err: any) {
       console.error('Auth error:', err);
@@ -126,7 +170,6 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     }
   };      
       
-  
   const showToast = (message: string, bgColor: string) => {
     const toast = document.createElement('div');
     toast.textContent = message;
@@ -138,6 +181,67 @@ const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose, onSuccess, theme
     `;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
+  };
+
+  // ✅ signUpWithEmail - creates both Auth user AND Firestore document
+  const signUpWithEmail = async (email: string, password: string, displayName: string) => {
+    try {
+      // 1. Create the user in Firebase Auth
+      const result = await createUserWithEmailAndPassword(auth, email, password);
+      const user = result.user;
+      
+      console.log('✅ User created in Auth:', user.uid);
+      
+      // 2. Set display name if provided
+      if (displayName && user) {
+        try {
+          await updateProfile(user, { displayName });
+          console.log('✅ Display name updated:', displayName);
+        } catch (profileErr) {
+          console.warn('Failed to set displayName:', profileErr);
+        }
+      }
+      
+      // 3. ✅ Create Firestore document for the user
+      try {
+        await setDoc(doc(db, 'users', user.uid), {
+          uid: user.uid,
+          email: user.email,
+          displayName: displayName || email.split('@')[0] || 'User',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          isPro: false,
+          preferences: {
+            translation: 'KJV',
+            fontSize: 'medium',
+            theme: 'light',
+            showVerseNumbers: true,
+            autoPlayAudio: false,
+            readingPlan: null,
+            dailyReminder: false,
+            reminderTime: '09:00'
+          },
+          favorites: []
+        });
+        console.log('✅ Firestore document created for user:', user.uid);
+      } catch (firestoreErr) {
+        console.error('❌ Failed to create Firestore document:', firestoreErr);
+      }
+      
+      return { 
+        success: true, 
+        user: user, 
+        error: '' 
+      };
+      
+    } catch (err: any) {
+      console.error('❌ Sign up failed:', err);
+      return { 
+        success: false, 
+        user: null, 
+        error: err?.message || 'Failed to create account' 
+      };
+    }
   };
 
   return (
@@ -392,24 +496,5 @@ async function signInWithEmail(email: string, password: string) {
     };
   }
 }
-
-// At the bottom of AuthModal.tsx, OUTSIDE the component:
-
-  async function signUpWithEmail(email: string, password: string, displayName: string) {
-    try {
-      const result = await createUserWithEmailAndPassword(auth, email, password);
-      // If a displayName was provided, update the new user's profile
-      if (displayName && result.user) {
-        try {
-          await updateProfile(result.user, { displayName });
-        } catch (profileErr) {
-          console.warn('Failed to set displayName:', profileErr);
-        }
-      }
-      return { success: true, user: result.user, error: '' };
-    } catch (err: any) {
-      return { success: false, user: null, error: err?.message || 'Failed to create account' };
-    }
-  }
 
 export default AuthModal;

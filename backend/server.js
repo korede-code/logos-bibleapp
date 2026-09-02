@@ -1,7 +1,7 @@
-// backend/server.js
 const express = require('express');
-const fs = require('fs');
+const cors = require('cors');
 const path = require('path');
+const fs = require('fs');
 const app = express();
 const { google } = require('googleapis');
 const axios = require('axios');
@@ -9,26 +9,12 @@ const axios = require('axios');
 const singleChapterBooks = require('./data/single-chapter-books.json');
 const BibleService = require('./services/BibleService');
 
-// Try to load Firebase, but continue if it fails
-let db = null;
-let admin = null;
-let isFirebaseAvailable = false;
+// Load Firebase config using the working approach
+const { admin, db, isFirebaseAvailable } = require('./config/firebase-admin');
 
-try {
-  const firebaseConfig = require('./config/firebase-admin');
-  db = firebaseConfig.db;
-  admin = firebaseConfig.admin;
-  isFirebaseAvailable = firebaseConfig.isFirebaseAvailable || false;
-  
-  if (isFirebaseAvailable) {
-    console.log('✅ Firebase loaded successfully');
-  } else {
-    console.log('⚠️ Firebase not available - will use JSON file');
-  }
-} catch (error) {
-  console.error('⚠️ Firebase failed to load:', error.message);
-  console.log('⚠️ Continuing without Firebase (will use JSON file)');
-}
+console.log(`📊 Firebase status: ${isFirebaseAvailable ? '✅ Connected' : '⚠️ Using JSON fallback'}`);
+
+
 
 // ============ CORS ============
 app.use((req, res, next) => {
@@ -114,7 +100,11 @@ async function getUserData(userId) {
 
 // ============ HEALTH CHECK ============
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ 
+    status: 'ok', 
+    timestamp: new Date().toISOString(),
+    firebaseAvailable: isFirebaseAvailable
+  });
 });
 
 // ============ GOOGLE PLAY BILLING ============
@@ -841,47 +831,705 @@ app.get('/api/bible/votd', (req, res) => {
 });
 
 
+// Get user dashboard data (combines all user info)
+app.get('/api/users/:userId/dashboard', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userData = doc.data();
+    
+    // Calculate subscription status
+    const isPro = userData.isPro || false;
+    let subscriptionStatus = 'inactive';
+    let daysRemaining = 0;
+    
+    if (isPro && userData.expiryTime) {
+      const now = Date.now();
+      const expiry = parseInt(userData.expiryTime);
+      if (expiry > now) {
+        subscriptionStatus = 'active';
+        daysRemaining = Math.ceil((expiry - now) / (1000 * 60 * 60 * 24));
+      } else {
+        subscriptionStatus = 'expired';
+      }
+    }
+
+    res.json({
+      success: true,
+      data: {
+        id: doc.id,
+        name: userData.name || 'User',
+        email: userData.email || 'unknown',
+        isPro: isPro,
+        subscriptionStatus: subscriptionStatus,
+        daysRemaining: daysRemaining,
+        productId: userData.productId || null,
+        proSince: userData.proSince || null,
+        expiryTime: userData.expiryTime || null,
+        createdAt: userData.createdAt || null,
+        preferences: userData.preferences || {}
+      }
+    });
+  } catch (error) {
+    console.error('❌ Dashboard error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // backend/server.js - Add this endpoint
+// ============ FIREBASE DEBUG ENDPOINTS ============
 app.get('/api/firebase-debug', (req, res) => {
+  const hasServiceAccount = !!process.env.FIREBASE_SERVICE_ACCOUNT;
+  const hasServiceAccountFile = require('fs').existsSync(
+    require('path').join(__dirname, 'service-account.json')
+  );
+  
   res.json({
     firebaseAvailable: isFirebaseAvailable,
-    credentials: {
-      goog_application_credentials: process.env.GOOGLE_APPLICATION_CREDENTIALS || 'not set',
-      firebase_project_id: process.env.FIREBASE_PROJECT_ID || 'not set',
-      firebase_client_email: process.env.FIREBASE_CLIENT_EMAIL || 'not set',
-      firebase_private_key: process.env.FIREBASE_PRIVATE_KEY ? 'set (length: ' + process.env.FIREBASE_PRIVATE_KEY.length + ')' : 'not set'
+    firestoreReady: !!(db && isFirebaseAvailable),
+    credentialSource: {
+      environmentVariable: hasServiceAccount ? '✅ FIREBASE_SERVICE_ACCOUNT is set' : '❌ Not set',
+      localFile: hasServiceAccountFile ? '✅ service-account.json exists' : '❌ Not found',
+      individualVars: {
+        projectId: process.env.FIREBASE_PROJECT_ID || 'not set',
+        clientEmail: process.env.FIREBASE_CLIENT_EMAIL || 'not set',
+        privateKey: process.env.FIREBASE_PRIVATE_KEY ? 'set (length: ' + process.env.FIREBASE_PRIVATE_KEY.length + ')' : 'not set'
+      }
     },
-    node_env: process.env.NODE_ENV || 'not set'
+    node_env: process.env.NODE_ENV || 'not set',
+    timestamp: new Date().toISOString()
   });
 });
 
-// backend/server.js
-app.get('/api/firebase-test', async (req, res) => {
+// Get user analytics
+app.get('/api/analytics/users', async (req, res) => {
   try {
     if (!isFirebaseAvailable || !db) {
-      return res.json({ 
-        success: false, 
-        message: 'Firebase not available',
-        isAvailable: false
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
       });
     }
+
+    const snapshot = await db.collection('users').get();
     
-    // Try to write a test document
-    await db.collection('_test').doc('test').set({
-      timestamp: new Date().toISOString(),
-      message: 'Firebase is working!'
+    let totalUsers = 0;
+    let proUsers = 0;
+    let activeSubscriptions = 0;
+    let expiredSubscriptions = 0;
+    const products = {};
+    
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      totalUsers++;
+      
+      if (data.isPro) {
+        proUsers++;
+        
+        // Check subscription status
+        if (data.expiryTime) {
+          const now = Date.now();
+          const expiry = parseInt(data.expiryTime);
+          if (expiry > now) {
+            activeSubscriptions++;
+          } else {
+            expiredSubscriptions++;
+          }
+        }
+        
+        // Track products
+        const product = data.productId || 'unknown';
+        products[product] = (products[product] || 0) + 1;
+      }
     });
-    
-    res.json({ 
-      success: true, 
-      message: 'Firebase is working!',
-      isAvailable: true
+
+    res.json({
+      success: true,
+      analytics: {
+        totalUsers,
+        proUsers,
+        freeUsers: totalUsers - proUsers,
+        activeSubscriptions,
+        expiredSubscriptions,
+        conversionRate: totalUsers > 0 ? (proUsers / totalUsers * 100).toFixed(1) + '%' : '0%',
+        productBreakdown: products,
+        timestamp: new Date().toISOString()
+      }
     });
   } catch (error) {
-    res.json({ 
-      success: false, 
-      message: error.message,
-      isAvailable: false
+    console.error('❌ Analytics error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============ USER PREFERENCES ============
+
+// Get user preferences
+app.get('/api/users/:userId/preferences', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    const userData = doc.data();
+    const preferences = userData.preferences || {};
+
+    // Return with defaults if not set
+    res.json({
+      success: true,
+      data: {
+        translation: preferences.translation || 'KJV',
+        fontSize: preferences.fontSize || 'medium',
+        theme: preferences.theme || 'light',
+        showVerseNumbers: preferences.showVerseNumbers !== undefined ? preferences.showVerseNumbers : true,
+        autoPlayAudio: preferences.autoPlayAudio || false,
+        readingPlan: preferences.readingPlan || null,
+        dailyReminder: preferences.dailyReminder || false,
+        reminderTime: preferences.reminderTime || '09:00',
+        updatedAt: preferences.updatedAt || userData.updatedAt || null
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error getting preferences:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update user preferences
+app.put('/api/users/:userId/preferences', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { 
+      translation, 
+      fontSize, 
+      theme, 
+      showVerseNumbers,
+      autoPlayAudio,
+      readingPlan,
+      dailyReminder,
+      reminderTime 
+    } = req.body;
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    // Check if user exists
+    const doc = await db.collection('users').doc(userId).get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Build preferences object with only provided fields
+    const preferences = {};
+    if (translation !== undefined) preferences.translation = translation;
+    if (fontSize !== undefined) preferences.fontSize = fontSize;
+    if (theme !== undefined) preferences.theme = theme;
+    if (showVerseNumbers !== undefined) preferences.showVerseNumbers = showVerseNumbers;
+    if (autoPlayAudio !== undefined) preferences.autoPlayAudio = autoPlayAudio;
+    if (readingPlan !== undefined) preferences.readingPlan = readingPlan;
+    if (dailyReminder !== undefined) preferences.dailyReminder = dailyReminder;
+    if (reminderTime !== undefined) preferences.reminderTime = reminderTime;
+    
+    preferences.updatedAt = new Date().toISOString();
+
+    // Update user document with new preferences
+    await db.collection('users').doc(userId).update({
+      preferences: preferences,
+      updatedAt: new Date().toISOString()
+    });
+
+    // Get updated user data
+    const updatedDoc = await db.collection('users').doc(userId).get();
+    const userData = updatedDoc.data();
+
+    res.json({
+      success: true,
+      message: 'Preferences updated successfully',
+      data: {
+        preferences: userData.preferences || {},
+        updatedAt: userData.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error updating preferences:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Reset user preferences to defaults
+app.delete('/api/users/:userId/preferences', async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    // Check if user exists
+    const doc = await db.collection('users').doc(userId).get();
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Reset to defaults
+    const defaultPreferences = {
+      translation: 'KJV',
+      fontSize: 'medium',
+      theme: 'light',
+      showVerseNumbers: true,
+      autoPlayAudio: false,
+      readingPlan: null,
+      dailyReminder: false,
+      reminderTime: '09:00',
+      updatedAt: new Date().toISOString()
+    };
+
+    await db.collection('users').doc(userId).update({
+      preferences: defaultPreferences,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'Preferences reset to defaults',
+      data: {
+        preferences: defaultPreferences
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error resetting preferences:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Bulk update preferences (for testing)
+app.post('/api/users/bulk-update-preferences', async (req, res) => {
+  try {
+    const { preference, value } = req.body;
+
+    if (!preference || value === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: 'Preference name and value are required'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const snapshot = await db.collection('users').get();
+    let updatedCount = 0;
+    const batch = db.batch();
+
+    snapshot.forEach(doc => {
+      const userData = doc.data();
+      const preferences = userData.preferences || {};
+      preferences[preference] = value;
+      preferences.updatedAt = new Date().toISOString();
+
+      const docRef = db.collection('users').doc(doc.id);
+      batch.update(docRef, {
+        preferences: preferences,
+        updatedAt: new Date().toISOString()
+      });
+      updatedCount++;
+    });
+
+    await batch.commit();
+
+    res.json({
+      success: true,
+      message: `Updated ${updatedCount} users with ${preference}=${value}`,
+      updatedCount: updatedCount
+    });
+  } catch (error) {
+    console.error('❌ Bulk update error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test Firestore connection with read/write
+app.get('/api/firestore-test', async (req, res) => {
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.json({
+        success: false,
+        message: 'Firebase/Firestore not available',
+        firebaseAvailable: isFirebaseAvailable,
+        dbExists: !!db
+      });
+    }
+
+    // Test collection reference exists
+    const testCollection = db.collection('_test');
+    const testDoc = testCollection.doc('connection-test');
+    
+    // Write test data
+    await testDoc.set({
+      timestamp: new Date().toISOString(),
+      message: 'Firebase is working!',
+      testId: 'connection-test-' + Date.now()
+    });
+
+    // Read it back
+    const doc = await testDoc.get();
+    const data = doc.exists ? doc.data() : null;
+
+    // Clean up (optional)
+    // await testDoc.delete();
+
+    res.json({
+      success: true,
+      message: 'Firestore connection is working!',
+      firebaseAvailable: true,
+      data: data,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Firestore test error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      code: error.code || 'UNKNOWN',
+      firebaseAvailable: isFirebaseAvailable
+    });
+  }
+});
+
+// Register a new user
+app.post('/api/users/register', async (req, res) => {
+  try {
+    const { userId, name, email, firebaseId } = req.body;
+    
+    if (!userId && !firebaseId) {
+      return res.status(400).json({
+        success: false,
+        error: 'userId or firebaseId is required'
+      });
+    }
+
+    const docId = userId || firebaseId;
+    
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const userData = {
+      name: name || 'User',
+      email: email || 'unknown',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      isPro: false,
+      preferences: {
+        defaultTranslation: 'KJV',
+        fontSize: 'medium'
+      }
+    };
+
+    await db.collection('users').doc(docId).set(userData, { merge: true });
+
+    res.json({
+      success: true,
+      message: 'User registered successfully',
+      data: {
+        id: docId,
+        ...userData
+      }
+    });
+  } catch (error) {
+    console.error('❌ Registration error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Test reading from Firestore
+app.get('/api/firestore-read/:collection/:docId', async (req, res) => {
+  const { collection, docId } = req.params;
+  
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection(collection).doc(docId).get();
+    
+    if (doc.exists) {
+      res.json({
+        success: true,
+        data: { id: doc.id, ...doc.data() }
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        message: `Document ${collection}/${docId} not found`
+      });
+    }
+  } catch (error) {
+    console.error('❌ Firestore read error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Write to Firestore
+app.post('/api/firestore-write/:collection', async (req, res) => {
+  const { collection } = req.params;
+  const { data, docId } = req.body;
+  
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    if (!data) {
+      return res.status(400).json({
+        success: false,
+        error: 'Data is required in request body'
+      });
+    }
+
+    let ref;
+    if (docId) {
+      ref = db.collection(collection).doc(docId);
+      await ref.set(data, { merge: true });
+    } else {
+      ref = db.collection(collection);
+      const docRef = await ref.add(data);
+      ref = docRef;
+    }
+
+    const doc = await ref.get();
+    const result = {
+      id: doc.id,
+      ...doc.data()
+    };
+
+    res.json({
+      success: true,
+      message: 'Data written successfully',
+      data: result
+    });
+  } catch (error) {
+    console.error('❌ Firestore write error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get all users (safe - only returns basic info)
+// ============ FIRESTORE USER MANAGEMENT ============
+
+// Get all users (safe - only returns basic info, limited to 100)
+app.get('/api/firestore-users/all', async (req, res) => {
+  try {
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    // Limit to 100 users for safety
+    const snapshot = await db.collection('users').limit(100).get();
+    
+    const users = [];
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      users.push({
+        id: doc.id,
+        name: data.name || 'Unknown',
+        email: data.email || 'Unknown',
+        isPro: data.isPro || false,
+        createdAt: data.createdAt || null,
+        proSince: data.proSince || null,
+        // Don't include sensitive data like purchase tokens
+      });
+    });
+
+    res.json({
+      success: true,
+      count: users.length,
+      users: users,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('❌ Error fetching users:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Get a specific user by ID (with more details)
+app.get('/api/firestore-users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: `User ${userId} not found`
+      });
+    }
+
+    const data = doc.data();
+    res.json({
+      success: true,
+      data: {
+        id: doc.id,
+        ...data
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error fetching user:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Search users by name or email
+app.get('/api/firestore-users/search', async (req, res) => {
+  try {
+    const { q } = req.query;
+    
+    if (!q || q.length < 2) {
+      return res.status(400).json({
+        success: false,
+        error: 'Search query must be at least 2 characters'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    // Get all users and filter (Firestore doesn't support text search natively)
+    const snapshot = await db.collection('users').limit(200).get();
+    
+    const results = [];
+    const queryLower = q.toLowerCase();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      const name = (data.name || '').toLowerCase();
+      const email = (data.email || '').toLowerCase();
+      
+      if (name.includes(queryLower) || email.includes(queryLower)) {
+        results.push({
+          id: doc.id,
+          name: data.name || 'Unknown',
+          email: data.email || 'Unknown',
+          isPro: data.isPro || false
+        });
+      }
+    });
+
+    res.json({
+      success: true,
+      count: results.length,
+      results: results,
+      query: q
+    });
+  } catch (error) {
+    console.error('❌ Error searching users:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });
@@ -942,8 +1590,488 @@ app.get('/api/bible/search', (req, res) => {
   });
 });
 
+// ============ GET BOOKS ============
+app.get('/api/books', async (req, res) => {
+  try {
+    if (isFirebaseAvailable && db) {
+      try {
+        const snapshot = await db.collection('books').get();
+        const books = [];
+        snapshot.forEach(doc => {
+          books.push({ id: doc.id, ...doc.data() });
+        });
+        return res.json({
+          success: true,
+          data: books,
+          source: 'firebase'
+        });
+      } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError.message);
+      }
+    }
+    
+    const books = BibleService.getBooks();
+    res.json({
+      success: true,
+      data: books,
+      source: 'json-fallback'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============ SEARCH VERSES ============
+app.get('/api/search', async (req, res) => {
+  const { query, translation = 'KJV' } = req.query;
+  
+  if (!query) {
+    return res.status(400).json({
+      success: false,
+      error: 'Search query is required'
+    });
+  }
+  
+  try {
+    if (isFirebaseAvailable && db) {
+      try {
+        const versesRef = db.collection('verses');
+        const snapshot = await versesRef
+          .where('translation', '==', translation)
+          .limit(50)
+          .get();
+        
+        const results = [];
+        snapshot.forEach(doc => {
+          const verse = doc.data();
+          if (verse.text && verse.text.toLowerCase().includes(query.toLowerCase())) {
+            results.push(verse);
+          }
+        });
+        
+        return res.json({
+          success: true,
+          data: results,
+          source: 'firebase'
+        });
+      } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError.message);
+      }
+    }
+    
+    const results = BibleService.search(query, translation);
+    res.json({
+      success: true,
+      data: results.slice(0, 50),
+      source: 'json-fallback'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============ GET VERSE BY REFERENCE ============
+app.get('/api/verse', async (req, res) => {
+  const { book, chapter, verse, translation = 'KJV' } = req.query;
+  
+  if (!book || !chapter || !verse) {
+    return res.status(400).json({
+      success: false,
+      error: 'Missing required parameters: book, chapter, verse'
+    });
+  }
+  
+  try {
+    if (isFirebaseAvailable && db) {
+      try {
+        const snapshot = await db.collection('verses')
+          .where('book', '==', book)
+          .where('chapter', '==', parseInt(chapter))
+          .where('verse', '==', parseInt(verse))
+          .where('translation', '==', translation)
+          .limit(1)
+          .get();
+        
+        if (!snapshot.empty) {
+          let verseData = null;
+          snapshot.forEach(doc => {
+            verseData = { id: doc.id, ...doc.data() };
+          });
+          return res.json({
+            success: true,
+            data: verseData,
+            source: 'firebase'
+          });
+        }
+      } catch (firestoreError) {
+        console.error('Firestore error:', firestoreError.message);
+      }
+    }
+    
+    const verseData = BibleService.getVerse(book, parseInt(chapter), parseInt(verse), translation);
+    if (verseData) {
+      res.json({
+        success: true,
+        data: verseData,
+        source: 'json-fallback'
+      });
+    } else {
+      res.status(404).json({
+        success: false,
+        error: 'Verse not found'
+      });
+    }
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// ============ FAVORITES ============
+
+// Get all favorites for a user
+app.get('/api/users/:userId/favorites', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.json({
+        success: true,
+        data: [],
+        count: 0
+      });
+    }
+
+    const userData = doc.data();
+    const favorites = userData.favorites || [];
+
+    res.json({
+      success: true,
+      data: favorites,
+      count: favorites.length
+    });
+  } catch (error) {
+    console.error('❌ Error getting favorites:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Add a verse to favorites
+app.post('/api/users/:userId/favorites', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { 
+      book, 
+      bookId, 
+      chapter, 
+      verse, 
+      text, 
+      translation,
+      notes,
+      dateAdded 
+    } = req.body;
+
+    if (!book || !chapter || !verse || !text) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: book, chapter, verse, text'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    // Check if user exists
+    const doc = await db.collection('users').doc(userId).get();
+    
+    // Create favorite object
+    const favorite = {
+      id: book + '-' + chapter + '-' + verse + '-' + Date.now(),
+      book: book,
+      bookId: bookId || 0,
+      chapter: parseInt(chapter),
+      verse: parseInt(verse),
+      text: text,
+      translation: translation || 'KJV',
+      notes: notes || '',
+      dateAdded: dateAdded || new Date().toISOString(),
+      dateModified: new Date().toISOString()
+    };
+
+    if (!doc.exists) {
+      // Create new user with favorites
+      await db.collection('users').doc(userId).set({
+        favorites: [favorite],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    } else {
+      // Update existing user - add to favorites array
+      const userData = doc.data();
+      const favorites = userData.favorites || [];
+      
+      // Check if already favorited
+      const exists = favorites.some(function(f) {
+        return f.book === book && 
+               f.chapter === parseInt(chapter) && 
+               f.verse === parseInt(verse) &&
+               f.translation === (translation || 'KJV');
+      });
+
+      if (exists) {
+        return res.status(409).json({
+          success: false,
+          error: 'Verse already in favorites',
+          alreadyFavorited: true
+        });
+      }
+
+      favorites.push(favorite);
+      
+      await db.collection('users').doc(userId).update({
+        favorites: favorites,
+        updatedAt: new Date().toISOString()
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Verse added to favorites',
+      data: favorite
+    });
+  } catch (error) {
+    console.error('❌ Error adding favorite:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Remove a verse from favorites
+app.delete('/api/users/:userId/favorites', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { book, chapter, verse, translation } = req.query;
+
+    if (!book || !chapter || !verse) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: book, chapter, verse'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = doc.data();
+    const favorites = userData.favorites || [];
+    
+    // Filter out the favorite to remove
+    const updatedFavorites = favorites.filter(function(f) {
+      return !(f.book === book && 
+               f.chapter === parseInt(chapter) && 
+               f.verse === parseInt(verse) &&
+               f.translation === (translation || f.translation));
+    });
+
+    if (updatedFavorites.length === favorites.length) {
+      return res.status(404).json({
+        success: false,
+        error: 'Favorite not found'
+      });
+    }
+
+    await db.collection('users').doc(userId).update({
+      favorites: updatedFavorites,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: 'Verse removed from favorites',
+      count: updatedFavorites.length
+    });
+  } catch (error) {
+    console.error('❌ Error removing favorite:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Check if a verse is favorited
+app.get('/api/users/:userId/favorites/check', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { book, chapter, verse, translation } = req.query;
+
+    if (!book || !chapter || !verse) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: book, chapter, verse'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.json({
+        success: true,
+        isFavorited: false
+      });
+    }
+
+    const userData = doc.data();
+    const favorites = userData.favorites || [];
+    
+    var isFavorited = favorites.some(function(f) {
+      return f.book === book && 
+             f.chapter === parseInt(chapter) && 
+             f.verse === parseInt(verse) &&
+             f.translation === (translation || f.translation);
+    });
+
+    var favorite = null;
+    if (isFavorited) {
+      for (var i = 0; i < favorites.length; i++) {
+        var f = favorites[i];
+        if (f.book === book && 
+            f.chapter === parseInt(chapter) && 
+            f.verse === parseInt(verse)) {
+          favorite = f;
+          break;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      isFavorited: isFavorited,
+      favorite: favorite
+    });
+  } catch (error) {
+    console.error('❌ Error checking favorite:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Update favorite notes
+app.put('/api/users/:userId/favorites/:favoriteId/notes', async (req, res) => {
+  try {
+    const { userId, favoriteId } = req.params;
+    const { notes } = req.body;
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = doc.data();
+    const favorites = userData.favorites || [];
+    
+    var updatedFavorites = favorites.map(function(f) {
+      if (f.id === favoriteId) {
+        return {
+          ...f,
+          notes: notes || '',
+          dateModified: new Date().toISOString()
+        };
+      }
+      return f;
+    });
+
+    await db.collection('users').doc(userId).update({
+      favorites: updatedFavorites,
+      updatedAt: new Date().toISOString()
+    });
+
+    var updatedFavorite = null;
+    for (var i = 0; i < updatedFavorites.length; i++) {
+      if (updatedFavorites[i].id === favoriteId) {
+        updatedFavorite = updatedFavorites[i];
+        break;
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Notes updated',
+      data: updatedFavorite
+    });
+  } catch (error) {
+    console.error('❌ Error updating notes:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // ============ START SERVER ============
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Firebase status: ${isFirebaseAvailable ? '✅ Connected' : '⚠️ Using JSON fallback'}`);
 });
+
+module.exports = app;

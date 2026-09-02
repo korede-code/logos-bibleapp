@@ -1,22 +1,24 @@
+// src/components/SearchScreen.tsx
 /**
  * Logos Daily — Full-Text Search Screen
  * =======================================
  * Powerful Bible search with:
- * - Instant full-text search across all verses
+ * - Instant full-text search across all verses (OFFLINE)
  * - Filter by testament, book, or category
  * - Exact phrase / whole word / proximity modes
  * - Search history
  * - Result highlighting
  * 
- * 🔥 UPDATED: Now uses real Bible API for searching Scripture
+ * 🔥 FIXED: Now searches locally using BibleLocalService (offline)
+ * 🔥 FIXED: Filters are now scrollable and responsive
  */
 
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { Search, X, Filter, ChevronRight, Clock, BookOpen, ArrowLeft, WifiOff, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
-import { useBibleSearch, useOfflineSync } from '../hooks/useRealBibleData';
 import { BIBLE_BOOKS } from '../data/bibleData';
 import { getTheme } from '../utils/themeUtils';
+import { bibleLocal, BibleLocalVerse } from '../services/bibleLocalService';
 
 type SearchMode = 'contains' | 'exact' | 'whole-word';
 type TestamentFilter = 'all' | 'OT' | 'NT';
@@ -38,86 +40,125 @@ const SearchScreen: React.FC = () => {
   const [testamentFilter, setTestamentFilter] = useState<TestamentFilter>('all');
   const [bookFilter, setBookFilter] = useState<string | null>(null);
   const [showFilters, setShowFilters] = useState(false);
-  const [localResults, setLocalResults] = useState<any[]>([]);
-  const [isLocalSearching, setIsLocalSearching] = useState(false);
+  const [localResults, setLocalResults] = useState<BibleLocalVerse[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [totalVerses, setTotalVerses] = useState(0);
   
-  // Debounce timer ref
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const filtersRef = useRef<HTMLDivElement>(null);
 
-  // Use the real Bible search hook
-  const { 
-    results: apiResults, 
-    isLoading: isApiLoading, 
-    error, 
-    search,
-    hasMore 
-  } = useBibleSearch();
-
-  // Get offline sync status
-  const { isOnline: isNetworkOnline } = useOfflineSync();
-
-  // Determine if we're truly offline (no network)
-  const trulyOffline = !isOnline && !isNetworkOnline;
-
-  // Filter results by testament and book (post-search filtering)
-  const filteredResults = useMemo(() => {
-    let results = apiResults;
+  // Check if Bible is loaded
+  useEffect(() => {
+    const checkBibleLoaded = () => {
+      const available = bibleLocal.isAvailable();
+      const count = bibleLocal.getTotalVerseCount();
+      setTotalVerses(count);
+      setIsLoading(false);
+      console.log(`📚 Bible local service: ${available ? '✅ Loaded' : '❌ Not loaded'}, ${count} verses`);
+    };
     
-    // Apply testament filter
-    if (testamentFilter !== 'all' && results.length > 0) {
-      results = results.filter(result => {
-        const book = BIBLE_BOOKS.find(b => b.name === result.book);
-        return book?.testament === testamentFilter;
-      });
+    checkBibleLoaded();
+    
+    if (!bibleLocal.isAvailable()) {
+      const interval = setInterval(() => {
+        if (bibleLocal.isAvailable()) {
+          checkBibleLoaded();
+          clearInterval(interval);
+        }
+      }, 500);
+      
+      setTimeout(() => {
+        clearInterval(interval);
+        setIsLoading(false);
+      }, 5000);
+      
+      return () => clearInterval(interval);
     }
-    
-    // Apply book filter
-    if (bookFilter && results.length > 0) {
-      results = results.filter(result => result.book === bookFilter);
+  }, []);
+
+  // Perform local search
+  const performSearch = useCallback((searchQuery: string) => {
+    if (!searchQuery.trim() || searchQuery.trim().length < 2) {
+      setLocalResults([]);
+      return;
     }
-    
-    return results;
-  }, [apiResults, testamentFilter, bookFilter]);
 
-  // Get unique books from search results for filter UI
-  const availableBooks = useMemo(() => {
-    const books = new Set(apiResults.map(r => r.book));
-    return Array.from(books).sort();
-  }, [apiResults]);
-
-  // Handle search with real API
-  const handleSearch = useCallback(async (searchQuery: string) => {
-    if (!searchQuery.trim() || searchQuery.trim().length < 2) return;
-    
-    console.log('🔍 Searching for:', searchQuery); // Debug log
-    
-    // Add to search history
-    addSearchHistory(searchQuery.trim());
-    
-    setIsLocalSearching(trulyOffline);
+    setIsSearching(true);
     
     try {
-      if (trulyOffline) {
-        // Offline: simple message (IndexedDB search disabled for now)
-        setTimeout(() => {
-          setLocalResults([]);
-          setIsLocalSearching(false);
-        }, 500);
-      } else {
-        // Online: use API search
-        await search(searchQuery);
-        console.log('✅ Search completed');
+      let results: BibleLocalVerse[] = [];
+
+      switch (mode) {
+        case 'exact':
+          const exactTerm = searchQuery.trim().toLowerCase();
+          results = bibleLocal.search(searchQuery.trim());
+          results = results.filter(v => 
+            v.text.toLowerCase().includes(exactTerm)
+          );
+          break;
+          
+        case 'whole-word':
+          const words = searchQuery.trim().toLowerCase().split(/\s+/);
+          results = bibleLocal.search(searchQuery.trim());
+          results = results.filter(v => {
+            const textLower = v.text.toLowerCase();
+            return words.every(word => {
+              const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+              return regex.test(textLower);
+            });
+          });
+          break;
+          
+        case 'contains':
+        default:
+          results = bibleLocal.search(searchQuery.trim());
+          break;
       }
-    } catch (err) {
-      console.error('❌ Search failed:', err);
+
+      if (testamentFilter !== 'all') {
+        results = results.filter(v => {
+          const book = BIBLE_BOOKS.find(b => b.name === v.book);
+          return book?.testament === testamentFilter;
+        });
+      }
+
+      if (bookFilter) {
+        results = results.filter(v => v.book === bookFilter);
+      }
+
+      setLocalResults(results);
+    } catch (error) {
+      console.error('Search error:', error);
+      setLocalResults([]);
     } finally {
-      if (trulyOffline) {
-        // Handled in setTimeout
-      } else {
-        setIsLocalSearching(false);
-      }
+      setIsSearching(false);
     }
-  }, [trulyOffline, addSearchHistory, search]);
+  }, [mode, testamentFilter, bookFilter]);
+
+  // Auto-search with debounce
+  useEffect(() => {
+    if (debounceTimerRef.current) {
+      clearTimeout(debounceTimerRef.current);
+    }
+    
+    if (query.trim().length >= 2) {
+      debounceTimerRef.current = setTimeout(() => {
+        performSearch(query);
+        if (query.trim()) {
+          addSearchHistory(query.trim());
+        }
+      }, 300);
+    } else {
+      setLocalResults([]);
+    }
+    
+    return () => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
+    };
+  }, [query, performSearch, addSearchHistory]);
 
   const highlightText = (text: string, searchQuery: string): React.ReactNode => {
     if (!searchQuery.trim()) return text;
@@ -136,25 +177,19 @@ const SearchScreen: React.FC = () => {
     });
   };
 
-  // Get display results
-  const displayResults = trulyOffline ? localResults : filteredResults;
-  const isLoading = isApiLoading || isLocalSearching;
-  const hasResults = displayResults.length > 0;
+  // Get unique books from results for filter UI
+  const availableBooks = useMemo(() => {
+    const books = new Set(localResults.map(r => r.book));
+    return Array.from(books).sort();
+  }, [localResults]);
 
-  // Clean up debounce timer on unmount
-  useEffect(() => {
-    return () => {
-      if (debounceTimerRef.current) {
-        clearTimeout(debounceTimerRef.current);
-      }
-    };
-  }, []);
+  const displayResults = localResults;
+  const hasResults = displayResults.length > 0;
 
   return (
     <div className="flex flex-col h-full" style={{ backgroundColor: theme.bg }}>
-
-      {/* Header */}
-      <div className="px-5 pt-6 pb-3" style={{ borderBottom: `1px solid ${theme.border}` }}>
+      {/* Fixed Header */}
+      <div className="flex-shrink-0 px-5 pt-6 pb-3" style={{ borderBottom: `1px solid ${theme.border}`, backgroundColor: theme.bg }}>
         <div className="flex items-center gap-3 mb-4">
           <button onClick={() => navigate('home')} style={{ color: theme.textMuted }} aria-label="Go back">
             <ArrowLeft size={20} />
@@ -164,13 +199,19 @@ const SearchScreen: React.FC = () => {
           </h1>
         </div>
 
-        {/* Offline banner */}
-        {trulyOffline && (
-          <div className="mb-3 p-2 rounded-xl flex items-center justify-center gap-2" style={{ backgroundColor: '#f59e0b20' }}>
-            <WifiOff size={14} style={{ color: '#f59e0b' }} />
-            <span className="text-xs" style={{ color: '#f59e0b' }}>Offline mode - search may be limited</span>
-          </div>
-        )}
+        {/* Status indicator */}
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs" style={{ color: theme.textMuted }}>
+            {isLoading ? '📚 Loading Bible data...' : 
+             totalVerses > 0 ? `📚 ${totalVerses.toLocaleString()} verses available offline` : 
+             '📚 No Bible data loaded'}
+          </span>
+          {!isOnline && (
+            <span className="text-xs flex items-center gap-1" style={{ color: '#f59e0b' }}>
+              <WifiOff size={12} /> Offline
+            </span>
+          )}
+        </div>
 
         {/* Search Input */}
         <div
@@ -181,25 +222,14 @@ const SearchScreen: React.FC = () => {
           <input
             type="search"
             value={query}
-            onChange={e => {
-              setQuery(e.target.value);
-              // Clear previous debounce timer
-              if (debounceTimerRef.current) {
-                clearTimeout(debounceTimerRef.current);
-              }
-              // Auto-search as user types (with debounce)
-              if (e.target.value.trim().length >= 2) {
-                debounceTimerRef.current = setTimeout(() => {
-                  handleSearch(e.target.value);
-                }, 500);
-              }
-            }}
-            placeholder={trulyOffline ? 'Search (offline mode)' : 'Search any word or phrase...'}
+            onChange={e => setQuery(e.target.value)}
+            placeholder={isLoading ? 'Loading Bible data...' : 'Search any word or phrase...'}
             className="flex-1 bg-transparent outline-none font-medium"
             style={{ color: theme.text, fontSize: '15px' }}
             autoFocus
             aria-label="Search Bible text"
             autoCapitalize="none"
+            disabled={isLoading}
           />
           {query && (
             <button onClick={() => setQuery('')} style={{ color: theme.textMuted }} aria-label="Clear search">
@@ -207,20 +237,19 @@ const SearchScreen: React.FC = () => {
             </button>
           )}
           
-          {/* Manual Search Button */}
           <button
-            onClick={() => handleSearch(query)}
+            onClick={() => performSearch(query)}
             className="px-3 py-2 rounded-lg transition-all hover:opacity-90"
             style={{ backgroundColor: theme.accent, color: 'white' }}
             aria-label="Search"
-            disabled={!query.trim() || query.trim().length < 2}
+            disabled={!query.trim() || query.trim().length < 2 || isLoading}
           >
             <Search size={16} />
           </button>
           
           <button
             onClick={() => setShowFilters(!showFilters)}
-            className="p-1.5 rounded-lg transition-all"
+            className="p-1.5 rounded-lg transition-all flex-shrink-0"
             style={{
               backgroundColor: showFilters ? theme.accent : 'transparent',
               color: showFilters ? 'white' : theme.textMuted,
@@ -232,9 +261,17 @@ const SearchScreen: React.FC = () => {
           </button>
         </div>
 
-        {/* Filters */}
+        {/* 🔥 Scrollable Filters - Now inside a scrollable container */}
         {showFilters && (
-          <div className="mt-3 space-y-2" aria-label="Search filters">
+          <div 
+            ref={filtersRef}
+            className="mt-3 space-y-2 max-h-40 overflow-y-auto pr-2"
+            style={{ 
+              scrollbarWidth: 'thin',
+              scrollbarColor: `${theme.border} transparent`,
+            }}
+            aria-label="Search filters"
+          >
             {/* Search Mode */}
             <div className="flex gap-2">
               {[
@@ -282,9 +319,9 @@ const SearchScreen: React.FC = () => {
               ))}
             </div>
 
-            {/* Book Filter */}
+            {/* Book Filter - with scrolling for many books */}
             {availableBooks.length > 0 && (
-              <div className="mt-2">
+              <div className="mt-1">
                 <label className="text-xs font-medium mb-1 block" style={{ color: theme.textMuted }}>
                   Filter by Book
                 </label>
@@ -305,37 +342,28 @@ const SearchScreen: React.FC = () => {
           </div>
         )}
 
-        {/* Result count */}
+        {/* Result count - moved here */}
         {query.trim().length >= 2 && !isLoading && (
           <p className="text-xs font-medium mt-2 pl-1" style={{ color: theme.textMuted }}>
-            {displayResults.length} {displayResults.length === 1 ? 'result' : 'results'}
+            {displayResults.length} {displayResults.length === 1 ? 'result' : 'results'} found
             {displayResults.length === 0 && ' — try a different keyword'}
           </p>
         )}
-
-        {/* API Error Display */}
-        {error && !trulyOffline && (
-          <div className="mt-2 p-2 rounded-lg" style={{ backgroundColor: '#dc262620', color: '#dc2626' }}>
-            <p className="text-xs">{error}</p>
-          </div>
-        )}
       </div>
 
-      {/* Content */}
+      {/* 🔥 Scrollable Content Area */}
       <div className="flex-1 overflow-y-auto px-5 py-3">
 
         {/* Loading State */}
-        {isLoading && query.trim().length >= 2 && (
+        {isLoading && (
           <div className="flex flex-col items-center py-16 gap-3">
             <Loader2 size={32} className="animate-spin" style={{ color: theme.accent }} />
-            <p className="text-sm" style={{ color: theme.textMuted }}>
-              {trulyOffline ? 'Searching...' : 'Searching Scripture...'}
-            </p>
+            <p className="text-sm" style={{ color: theme.textMuted }}>Loading Bible data...</p>
           </div>
         )}
 
         {/* Search History (shown when no query) */}
-        {!query && searchHistory.length > 0 && (
+        {!isLoading && !query && searchHistory.length > 0 && (
           <section aria-label="Recent searches">
             <h2 className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.textMuted }}>
               ✦ Recent Searches
@@ -381,7 +409,7 @@ const SearchScreen: React.FC = () => {
         )}
 
         {/* Search Results */}
-        {query.trim().length >= 2 && !isLoading && hasResults && (
+        {!isLoading && query.trim().length >= 2 && hasResults && (
           <div className="space-y-3" role="list" aria-label="Search results">
             {displayResults.map((result, idx) => (
               <button
@@ -410,7 +438,7 @@ const SearchScreen: React.FC = () => {
                     className="ml-auto text-xs px-1.5 py-0.5 rounded"
                     style={{ backgroundColor: theme.surface, color: theme.textFaint }}
                   >
-                    {result.translation || readerSettings.translation}
+                    {result.translation || 'KJV'}
                   </span>
                 </div>
                 <p
@@ -425,30 +453,17 @@ const SearchScreen: React.FC = () => {
                 </p>
               </button>
             ))}
-            
-            {/* Load more button for pagination */}
-            {!trulyOffline && hasMore && !isLoading && (
-              <button
-                onClick={() => search(query)}
-                className="w-full py-3 rounded-xl text-center text-sm font-medium transition-all"
-                style={{ backgroundColor: theme.surface, color: theme.accent }}
-              >
-                Load More Results
-              </button>
-            )}
           </div>
         )}
 
         {/* No results */}
-        {query.trim().length >= 2 && !isLoading && !hasResults && (
+        {!isLoading && query.trim().length >= 2 && !hasResults && (
           <div className="flex flex-col items-center py-16 gap-4">
             <div className="text-5xl">🔍</div>
             <div className="text-center">
               <p className="font-bold mb-1" style={{ color: theme.text }}>No results found</p>
               <p className="text-sm" style={{ color: theme.textMuted }}>
-                {trulyOffline 
-                  ? 'Search is limited in offline mode. Connect to the internet for full search.' 
-                  : 'Try a different keyword or adjust filters'}
+                Try a different keyword or adjust your filters
               </p>
             </div>
             <div className="flex flex-wrap gap-2 justify-center mt-2">

@@ -33,6 +33,11 @@ const NAV_ITEMS: Array<{
     icon: <Search size={22} />,
     label: 'Search',
   },
+  { id: 'favorites',
+    icon: <Heart size={22} />,
+    label: 'Favorites',
+    
+  },
   {
     id: 'plans',
     icon: <Target size={22} />,

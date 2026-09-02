@@ -23,9 +23,10 @@ import {
   ChevronLeft, ChevronRight, Settings2, Bookmark, Download, HardDrive,
   X, BookOpen, ArrowLeft,
   Columns, AlignJustify, Eye, EyeOff, Link2, Volume2, MessageSquare,
-  WifiOff, RefreshCw, Search, Lightbulb, Crown, ChevronDown, GitCompare
+  WifiOff, RefreshCw, Search, Lightbulb, Crown, ChevronDown, GitCompare, Heart
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
+import { useFavorites } from '../hooks/useFavorites';
 import { BIBLE_BOOKS, CROSS_REFERENCES, BIBLE_TRANSLATIONS } from '../data/bibleData';
 import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
 import { format } from 'date-fns';
@@ -68,11 +69,13 @@ interface VerseTextProps {
   onCrossRefTap: (ref: string) => void;
   isParallel?: boolean;
   isCompare?: boolean;
+  onVerseClick?: (verse: VerseData) => void;
 }
 
 // ─── Red Letter Text Data ──────────────────────────────────────────────────
 
 const RED_LETTER_VERSES: Record<string, number[]> = {
+  // Matthew
   'Matthew:3': [15],
   'Matthew:4': [4, 7, 10, 17, 19],
   'Matthew:5': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
@@ -83,9 +86,101 @@ const RED_LETTER_VERSES: Record<string, number[]> = {
   'Matthew:10': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
   'Matthew:11': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
   'Matthew:12': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
-  'John:3': [3,5,6,7,8,10,11,12,13,14,15,16,17,18,19,20,21],
-  'John:14': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21],
-  'John:15': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17],
+  'Matthew:13': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58],
+  'Matthew:14': [16, 18, 27, 29, 31],
+  'Matthew:15': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 24, 26, 27, 28, 32, 34],
+  'Matthew:16': [2, 3, 4, 6, 7, 8, 9, 10, 11, 12, 13, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28],
+  'Matthew:17': [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+  'Matthew:18': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+  'Matthew:19': [4, 5, 6, 7, 8, 9, 10, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30],
+  'Matthew:20': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+  'Matthew:21': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
+  'Matthew:22': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46],
+  'Matthew:23': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+  'Matthew:24': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51],
+  'Matthew:25': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46],
+  'Matthew:26': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75],
+  'Matthew:27': [11, 12, 13, 14, 26, 46],
+  'Matthew:28': [10, 18, 19, 20],
+
+  // Mark
+  'Mark:1': [15, 17, 25, 27, 38, 40, 41, 44],
+  'Mark:2': [5, 8, 9, 10, 11, 12, 14, 17, 19, 20, 21, 22, 24, 25, 26, 27, 28],
+  'Mark:3': [3, 4, 5, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+  'Mark:4': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41],
+  'Mark:5': [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43],
+  'Mark:6': [4, 11, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+  'Mark:7': [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37],
+  'Mark:8': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38],
+  'Mark:9': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+  'Mark:10': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52],
+  'Mark:11': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+  'Mark:12': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44],
+  'Mark:13': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37],
+  'Mark:14': [6, 7, 8, 9, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72],
+  'Mark:15': [2, 34],
+  'Mark:16': [7, 15, 16, 17, 18],
+
+  // Luke
+  'Luke:2': [49],
+  'Luke:3': [16],
+  'Luke:4': [4, 8, 12, 18, 19, 21, 23, 24, 25, 26, 27, 35, 36, 43],
+  'Luke:5': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39],
+  'Luke:6': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49],
+  'Luke:7': [9, 13, 14, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+  'Luke:8': [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56],
+  'Luke:9': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62],
+  'Luke:10': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+  'Luke:11': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54],
+  'Luke:12': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+  'Luke:13': [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+  'Luke:14': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+  'Luke:15': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32],
+  'Luke:16': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+  'Luke:17': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37],
+  'Luke:18': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43],
+  'Luke:19': [5, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48],
+  'Luke:20': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47],
+  'Luke:21': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38],
+  'Luke:22': [10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71],
+  'Luke:23': [28, 29, 30, 31, 34, 43, 46],
+  'Luke:24': [17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49],
+
+  // John
+  'John:1': [38, 39, 42, 43, 46, 47, 48, 50, 51],
+  'John:2': [4, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+  'John:3': [3, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+  'John:4': [7, 10, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54],
+  'John:5': [6, 7, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47],
+  'John:6': [5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71],
+  'John:7': [6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53],
+  'John:8': [7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59],
+  'John:9': [3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41],
+  'John:10': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42],
+  'John:11': [4, 7, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57],
+  'John:12': [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50],
+  'John:13': [7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38],
+  'John:14': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31],
+  'John:15': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27],
+  'John:16': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33],
+  'John:17': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26],
+  'John:18': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40],
+  'John:19': [11, 26, 27, 28, 30],
+  'John:20': [15, 16, 17, 19, 21, 22, 23, 26, 27, 28, 29, 30, 31],
+  'John:21': [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23],
+
+  // Acts (Peter's speeches often omitted, but here are Jesus's words in Acts)
+  'Acts:1': [4, 5, 7, 8],
+  'Acts:9': [4, 5, 6],
+  'Acts:22': [7, 8, 10, 18, 19, 20, 21],
+  'Acts:26': [15, 16, 17, 18],
+
+  // Revelation
+  'Revelation:1': [8, 11, 17, 18],
+  'Revelation:2': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29],
+  'Revelation:3': [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22],
+  'Revelation:16': [15],
+  'Revelation:22': [7, 12, 13, 16, 17, 18, 19, 20],
 };
 
 // ─── Helper Functions ──────────────────────────────────────────────────────
@@ -511,7 +606,7 @@ const TranslationSelector: React.FC<{
 const VerseText = memo<VerseTextProps>(({
   verse, highlights, selectedVerses, onSelect, onDeselect,
   showVerseNumbers, redLetterText, theme, fontFamily, fontSize,
-  lineSpacing, showCrossRef, crossRefs, onCrossRefTap, isParallel, isCompare
+  lineSpacing, showCrossRef, crossRefs, onCrossRefTap, isParallel, isCompare, onVerseClick
 }) => {
   const verseKey = `${verse.bookId}:${verse.chapter}:${verse.verse}`;
   const isSelected = selectedVerses.includes(verseKey);
@@ -524,12 +619,18 @@ const VerseText = memo<VerseTextProps>(({
   const verseRefs = crossRefs || [];
 
   const handleClick = useCallback(() => {
+    console.log('📖 Verse clicked:', verse.book, verse.chapter, verse.verse);
+
+    if (onVerseClick) {
+      onVerseClick(verse);
+    }
+
     if (isSelected) {
       onDeselect(verseKey);
     } else {
       onSelect(verseKey);
     }
-  }, [isSelected, verseKey, onSelect, onDeselect]);
+  }, [isSelected, verseKey, onSelect, onDeselect, onVerseClick, verse]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' || e.key === ' ') {
@@ -690,8 +791,26 @@ const ReaderScreen: React.FC = () => {
 
   const theme = getTheme(readerSettings.theme);
 
-  // ─── Compute Display Verses ─────────────────────────────────────────────
+  const userId = localStorage.getItem('currentUserId');
+  const { addFavorite, removeFavorite, isFavorited } = useFavorites(userId);
+  const [isFavoritedState, setIsFavoritedState] = useState(false);
 
+  // Add this near the top of your ReaderScreen component
+  const showToast = (message: string, bgColor: string) => {
+    const toast = document.createElement('div');
+    toast.textContent = message;
+    toast.style.cssText = `
+      position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+      background: ${bgColor}; color: white; padding: 10px 20px;
+      border-radius: 10px; z-index: 1000; font-size: 14px;
+      animation: fadeInUp 0.3s ease;
+      max-width: 90%;
+    `;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+  };
+
+  // ─── Compute Display Verses 
   const displayVerses = useMemo(() => {
     if (currentChapterVerses && currentChapterVerses.length > 0) {
       return currentChapterVerses.map(v => ({
@@ -706,6 +825,33 @@ const ReaderScreen: React.FC = () => {
     return [];
   }, [currentChapterVerses, readingPosition.bookId, readerSettings.translation]);
 
+ 
+  const currentVerse = useMemo(() => {
+    if (displayVerses.length > 0 && readingPosition.verse) {
+      // Find the exact verse that matches the current reading position
+      const verseData = displayVerses.find(v => v.verse === readingPosition.verse);
+      if (verseData) {
+        return {
+          book: verseData.book,
+          bookId: verseData.bookId || readingPosition.bookId,
+          chapter: verseData.chapter || readingPosition.chapter,
+          verse: verseData.verse,
+          text: verseData.text,
+          translation: readerSettings.translation || 'KJV'
+        };
+      }
+    }
+    // Fallback: use reading position
+    return {
+      book: readingPosition.book,
+      bookId: readingPosition.bookId,
+      chapter: readingPosition.chapter,
+      verse: readingPosition.verse || 1,
+      text: displayVerses.length > 0 ? displayVerses[0]?.text || '' : '',
+      translation: readerSettings.translation || 'KJV'
+    };
+  }, [displayVerses, readingPosition, readerSettings.translation]);
+
   // ─── Current Book Info ──────────────────────────────────────────────────
 
   const currentBook = BIBLE_BOOKS.find(b => b.id === readingPosition.bookId);
@@ -715,6 +861,67 @@ const ReaderScreen: React.FC = () => {
   );
 
   // ─── Effects ─────────────────────────────────────────────────────────────
+  // Check if current verse is favorited
+  useEffect(() => {
+    if (userId && currentVerse) {
+      console.log('🔍 Checking favorite for:', currentVerse.book, currentVerse.chapter, currentVerse.verse);
+      isFavorited(currentVerse.book, currentVerse.chapter, currentVerse.verse)
+        .then(result => {
+          console.log('✅ Is favorited?', result);
+          setIsFavoritedState(result);
+        })
+        .catch(err => console.error('Error checking favorite:', err));
+    }
+  }, [userId, currentVerse, isFavorited]);
+
+  // Toggle favorite
+  const handleToggleFavorite = async () => {
+    if (!userId) {
+      showToast('Please sign in to save favorites', '#f59e0b');
+      return;
+    }
+    
+    if (!currentVerse) {
+      console.warn('No current verse available');
+      return;
+    }
+    
+    console.log('❤️ Toggling favorite for:', currentVerse.book, currentVerse.chapter, currentVerse.verse);
+    
+    try {
+      if (isFavoritedState) {
+        // Remove from favorites - use verse number
+        await removeFavorite(
+          currentVerse.book, 
+          currentVerse.chapter, 
+          currentVerse.verse,
+          currentVerse.translation
+        );
+        setIsFavoritedState(false);
+        showToast('Removed from favorites', '#888');
+      } else {
+        // Add to favorites
+        await addFavorite({
+          book: currentVerse.book,
+          bookId: currentVerse.bookId || readingPosition.bookId,
+          chapter: currentVerse.chapter,
+          verse: currentVerse.verse, // <-- This must be the verse number
+          text: currentVerse.text,
+          translation: readerSettings.translation || 'KJV',
+          notes: ''
+        });
+        setIsFavoritedState(true);
+        showToast('Added to favorites ❤️', '#4CAF50');
+      }
+    } catch (error) {
+      console.error('Error toggling favorite:', error);
+      if (error instanceof Error && error.message.includes('already in favorites')) {
+        setIsFavoritedState(true);
+      } else {
+        showToast('Failed to update favorites', '#e53935');
+      }
+    }
+  };
 
   // Update total verses when chapter loads
   useEffect(() => {
@@ -790,6 +997,24 @@ const ReaderScreen: React.FC = () => {
       );
     }
   }, [readingPosition.book, readingPosition.chapter, readerSettings.translation, fetchChapter]);
+
+  // In the useEffect that checks favorite status
+  useEffect(() => {
+    if (userId && currentVerse) {
+      console.log('🔍 Checking favorite for:', {
+        book: currentVerse.book,
+        chapter: currentVerse.chapter,
+        verse: currentVerse.verse,
+        text: currentVerse.text?.substring(0, 30)
+      });
+      isFavorited(currentVerse.book, currentVerse.chapter, currentVerse.verse)
+        .then(result => {
+          console.log('✅ Is favorited?', result);
+          setIsFavoritedState(result);
+        })
+        .catch(err => console.error('Error checking favorite:', err));
+    }
+  }, [userId, currentVerse, isFavorited]);
 
   // ─── Navigation Handlers ────────────────────────────────────────────────
 
@@ -1059,6 +1284,22 @@ const ReaderScreen: React.FC = () => {
 
           {/* ✅ Right: Bookmark and More Menu - Always visible with flex-shrink-0 */}
           <div className="flex items-center gap-1 flex-shrink-0">
+            {/* Add Heart button here */}
+            <button 
+              onClick={handleToggleFavorite}
+              className="w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0" 
+              style={{
+                backgroundColor: isFavoritedState ? `${theme.accent}20` : 'transparent',
+                color: isFavoritedState ? theme.accent : theme.textMuted
+              }}
+              aria-label={isFavoritedState ? 'Remove from favorites' : 'Add to favorites'}
+            >
+              <Heart 
+                size={18} 
+                fill={isFavoritedState ? theme.accent : 'none'} 
+              />
+            </button>
+
             <button 
               onClick={toggleBookmark} 
               className="w-8 h-8 rounded-xl flex items-center justify-center transition-all flex-shrink-0" 
@@ -1276,6 +1517,15 @@ const ReaderScreen: React.FC = () => {
                         crossRefs={[]}
                         onCrossRefTap={handleCrossRefTap}
                         isParallel={true}
+                        onVerseClick={(clickedVerse) => {
+                          console.log('📖 Setting reading position to verse:', clickedVerse.verse);
+                          setReadingPosition({
+                            book: clickedVerse.book,
+                            bookId: clickedVerse.bookId || readingPosition.bookId,
+                            chapter: clickedVerse.chapter || readingPosition.chapter,
+                            verse: clickedVerse.verse
+                          });
+                        }}
                       />
                     ))}
                   </div>
@@ -1356,7 +1606,17 @@ const ReaderScreen: React.FC = () => {
                             <div className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: code === 'KJV' ? theme.accent : theme.textMuted }}>
                               {code}
                             </div>
-                            <p className="text-sm leading-relaxed" style={{ color: theme.text }}>
+                            <p className="text-sm leading-relaxed cursor-pointer" style={{ color: theme.text }}
+                              onClick={() => {
+                                console.log('📖 Compare view - verse clicked:', verse.verse);
+                                setReadingPosition({
+                                  book: verse.book,
+                                  bookId: verse.bookId || readingPosition.bookId,
+                                  chapter: verse.chapter || readingPosition.chapter,
+                                  verse: verse.verse
+                                });
+                              }}
+                            >
                               {text}
                             </p>
                           </div>
@@ -1391,6 +1651,15 @@ const ReaderScreen: React.FC = () => {
                       showCrossRef={readerSettings.showCrossReferences && hasCrossRefs}                    
                       crossRefs={crossRefsList}
                       onCrossRefTap={handleCrossRefTap}
+                      onVerseClick={(clickedVerse) => {
+                        console.log('📖 Setting reading position to verse:', clickedVerse.verse);
+                        setReadingPosition({
+                          book: clickedVerse.book,
+                          bookId: clickedVerse.bookId || readingPosition.bookId,
+                          chapter: clickedVerse.chapter || readingPosition.chapter,
+                          verse: clickedVerse.verse
+                        });
+                      }}
                     />
                   );
                 })}

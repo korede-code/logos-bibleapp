@@ -1,17 +1,18 @@
 /**
- * AnnotationToolbar.tsx - Fixed with multi-verse image creation
+ * AnnotationToolbar.tsx - Fixed with multi-verse image creation and favorite button
  */
 
 import React, { useState } from 'react';
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 import { 
-  Highlighter, MessageSquare, Copy, Share2, Bookmark, Image, X
+  Highlighter, MessageSquare, Copy, Share2, Bookmark, Image, X, Heart
 } from 'lucide-react';
 import { useAppStore } from '../store/appStore';
 import { getTheme, HIGHLIGHT_COLORS } from '../utils/themeUtils';
 import { BIBLE_BOOKS } from '../data/bibleData';
 import VerseImageCreator from './VerseImageCreator';
+import { useFavorites } from '../hooks/useFavorites';
 
 type HighlightColor = 'yellow' | 'green' | 'blue' | 'pink' | 'purple' | 'orange';
 
@@ -40,6 +41,10 @@ const AnnotationToolbar: React.FC = () => {
   // ✅ Changed to store array of verses
   const [selectedVersesForImage, setSelectedVersesForImage] = useState<Array<{ reference: string; text: string; book: string; chapter: number; verse: number }>>([]);
 
+  // ✅ Get user ID and favorites hook
+  const userId = localStorage.getItem('currentUserId');
+  const { addFavorite, removeFavorite, isFavorited } = useFavorites(userId);
+
   const toast = (msg: string) => {
     setShowToast(msg);
     setTimeout(() => setShowToast(null), 2000);
@@ -49,20 +54,21 @@ const AnnotationToolbar: React.FC = () => {
     if (selectedVerses.length === 0) return null;
 
     const verses = selectedVerses.map(verseKey => {
-      const [bookId, chapter, verse] = verseKey.split(':');
+      const [bookId, chapter, verse] = verseKey.split(':').map(Number);
       return {
-        bookId: parseInt(bookId),
-        chapter: parseInt(chapter),
-        verse: parseInt(verse),
+        bookId: bookId,
+        chapter: chapter,
+        verse: verse,
       };
     });
 
+    // Get the first verse for book/chapter info
     const firstVerse = verses[0];
     const book = BIBLE_BOOKS.find(b => b.id === firstVerse.bookId);
 
     return {
       verses,
-      bookName: book?.name || readingPosition.book,
+      bookName: book?.name || readingPosition.book || 'Unknown',
       bookId: firstVerse.bookId,
       chapter: firstVerse.chapter,
     };
@@ -101,6 +107,85 @@ const AnnotationToolbar: React.FC = () => {
     });
 
     return result;
+  };
+
+  // ✅ Check if selected verses are favorited
+  const areSelectedVersesFavorited = async () => {
+    const verseData = getSelectedVersesData();
+    if (!verseData) return false;
+
+    // Check if all selected verses are favorited
+    for (const verse of verseData.verses) {
+      const favorited = await isFavorited(
+        verseData.bookName,
+        verse.chapter,
+        verse.verse,
+        readerSettings.translation || 'KJV'
+      );
+      if (!favorited) return false;
+    }
+    return true;
+  };
+
+  // ✅ Toggle favorite for all selected verses
+  const handleToggleFavorite = async () => {
+    if (!userId) {
+      toast('Please sign in to save favorites');
+      return;
+    }
+
+    const verseData = getSelectedVersesData();
+    if (!verseData) {
+      toast('Please select verses first');
+      return;
+    }
+
+    try {
+      const isFavorited = await areSelectedVersesFavorited();
+      const translation = readerSettings.translation || 'KJV';
+
+      if (isFavorited) {
+        // Remove all selected verses from favorites
+        for (const verse of verseData.verses) {
+          await removeFavorite(
+            verseData.bookName,
+            verse.chapter,
+            verse.verse,
+            translation
+          );
+        }
+        toast(`❤️ Removed ${verseData.verses.length} verse(s) from favorites`);
+      } else {
+        // Add all selected verses to favorites
+        for (const verse of verseData.verses) {
+          // Get verse text
+          const verseElement = document.getElementById(`verse-${verse.verse}`);
+          let text = '';
+          if (verseElement) {
+            const textSpan = verseElement.querySelector('span[role="button"]');
+            if (textSpan) {
+              text = textSpan.textContent?.trim() || '';
+            }
+          }
+
+          await addFavorite({
+            book: verseData.bookName,
+            bookId: verse.bookId,
+            chapter: verse.chapter,
+            verse: verse.verse,
+            text: text || `${verseData.bookName} ${verse.chapter}:${verse.verse}`,
+            translation: translation,
+            notes: ''
+          });
+        }
+        toast(`❤️ Added ${verseData.verses.length} verse(s) to favorites`);
+      }
+      
+      clearSelectedVerses();
+    } catch (error) {
+      console.error('Error toggling favorites:', error);
+      toast('Failed to update favorites');
+    }
   };
 
   const applyHighlight = (color: HighlightColor, style: 'highlight' | 'underline' = 'highlight') => {
@@ -226,66 +311,136 @@ const AnnotationToolbar: React.FC = () => {
   };
 
   const handleShare = async () => {
-    if (selectedVerses.length === 0) return;
-
-    const texts: string[] = [];
-    selectedVerses.forEach(verseKey => {
-      const [,, verse] = verseKey.split(':');
-      const el = document.getElementById(`verse-${verse}`);
-      if (el) {
-        const textSpan = el.querySelector('span[role="button"]');
-        if (textSpan) {
-          texts.push(`[${verse}] ${textSpan.textContent?.trim()}`);
-        }
-      }
-    });
-
-    const verseData = getSelectedVersesData();
-    const reference = verseData? `${verseData.bookName} ${verseData.chapter}` : 'Bible Verse';
-    const verseText = texts.join('\n\n');
-    const shareText = `${reference}\n\n${verseText}\n\n📖 Shared from Synthesis Bible`;
-
-    if (Capacitor.isNativePlatform()) {
-      try {
-        await Share.share({
-          title: reference,
-          text: shareText,
-          dialogTitle: 'Share verse',
-        });
-        toast('✓ Shared successfully');
-        return;
-      } catch (err: any) {
-        if (err.message?.includes('cancel') || err.name === 'AbortError') return;
-        console.error('Share failed:', err);
-      }
-    }
-
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: reference,
-          text: shareText,
-        });
-        toast('✓ Shared successfully');
-        return;
-      } catch (err: any) {
-        if (err.name === 'AbortError') return;
-      }
+    if (selectedVerses.length === 0) {
+      toast('Please select verses first');
+      return;
     }
 
     try {
-      await navigator.clipboard.writeText(shareText);
-      toast('✓ Verse copied to clipboard');
-    } catch {
-      const textarea = document.createElement('textarea');
-      textarea.value = shareText;
-      textarea.style.position = 'fixed';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-      toast('✓ Verse copied!');
+      const verseData = getSelectedVersesData();
+      if (!verseData) {
+        toast('Could not get verse data');
+        return;
+      }
+
+      // ✅ Build share text from selected verses
+      const verseTexts: string[] = [];
+      
+      // Get verse texts from the store or DOM
+      for (const verseKey of selectedVerses) {
+        const [bookId, chapter, verse] = verseKey.split(':');
+        const book = BIBLE_BOOKS.find(b => b.id === parseInt(bookId));
+        
+        // Try to get from DOM first
+        const verseElement = document.getElementById(`verse-${verse}`);
+        let text = '';
+        
+        if (verseElement) {
+          const textSpan = verseElement.querySelector('span[role="button"]');
+          if (textSpan) {
+            text = textSpan.textContent?.trim() || '';
+          }
+        }
+        
+        // If no text found, use a placeholder
+        if (!text) {
+          const highlight = highlights.find(
+            h => h.bookId === parseInt(bookId) && 
+                h.chapter === parseInt(chapter) && 
+                h.verse === parseInt(verse)
+          );
+          text = highlight?.text || `${book?.name || ''} ${chapter}:${verse}`;
+        }
+        
+        verseTexts.push(`[${verse}] ${text}`);
+      }
+
+      const reference = `${verseData.bookName} ${verseData.chapter}`;
+      const shareText = `"${verseTexts.join(' ')}"\n\n📖 ${reference} (${readerSettings.translation || 'KJV'})\n\nShared from Synthesis Bible`;
+
+      console.log('📤 Sharing text:', shareText);
+
+      // ✅ Try native share first (mobile)
+      if (Capacitor.isNativePlatform()) {
+        try {
+          const result = await Share.share({
+            title: reference,
+            text: shareText,
+            dialogTitle: 'Share verse',
+          });
+          if (result.activityType) {
+            console.log('✅ Shared via:', result.activityType);
+          }
+          toast('✓ Shared successfully');
+          return;
+        } catch (shareError: any) {
+          // User cancelled or share failed
+          if (shareError.message?.includes('cancel') || 
+              shareError.message?.includes('dismissed') ||
+              shareError.name === 'AbortError') {
+            console.log('Share was cancelled by user');
+            return;
+          }
+          console.error('Native share failed:', shareError);
+          // Fall through to web share
+        }
+      }
+
+      // ✅ Try Web Share API (desktop/mobile browsers)
+      if (navigator.share && window.innerWidth < 768) {
+        try {
+          await navigator.share({
+            title: reference,
+            text: shareText,
+          });
+          toast('✓ Shared successfully');
+          return;
+        } catch (shareError: any) {
+          if (shareError.name === 'AbortError') {
+            console.log('Share cancelled by user');
+            return;
+          }
+          console.error('Web share failed:', shareError);
+          // Fall through to clipboard
+        }
+      }
+
+      // ✅ Fallback: Copy to clipboard
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(shareText);
+          toast('✓ Copied to clipboard!');
+        } else {
+          // Fallback for older browsers
+          const textarea = document.createElement('textarea');
+          textarea.value = shareText;
+          textarea.style.position = 'fixed';
+          textarea.style.left = '-9999px';
+          textarea.style.top = '-9999px';
+          textarea.style.width = '1px';
+          textarea.style.height = '1px';
+          document.body.appendChild(textarea);
+          textarea.focus();
+          textarea.select();
+          
+          try {
+            document.execCommand('copy');
+            toast('✓ Copied to clipboard!');
+          } catch (execError) {
+            console.error('execCommand failed:', execError);
+            toast('Could not copy. Please copy the text manually.');
+          } finally {
+            document.body.removeChild(textarea);
+          }
+        }
+      } catch (clipboardError) {
+        console.error('Clipboard error:', clipboardError);
+        toast('Could not share. Please copy the text manually.');
+      }
+
+    } catch (error) {
+      console.error('Share error:', error);
+      toast('Failed to share');
     }
   };
 
@@ -472,6 +627,20 @@ const AnnotationToolbar: React.FC = () => {
           >
             <MessageSquare size={18} style={{ color: theme.accent }} />
             <span className="text-[11px] font-medium">Note</span>
+          </button>
+
+          {/* ❤️ Favorite button - NEW */}
+          <button
+            onClick={handleToggleFavorite}
+            className="flex flex-col items-center gap-1 px-4 py-2 rounded-xl min-w-[64px] transition-all hover:opacity-80"
+            style={{ 
+              backgroundColor: theme.surface, 
+              color: theme.text,
+              border: `1px solid ${theme.border}`
+            }}
+          >
+            <Heart size={18} style={{ color: '#e53935' }} />
+            <span className="text-[11px] font-medium">Favorite</span>
           </button>
 
           {/* Copy button */}
