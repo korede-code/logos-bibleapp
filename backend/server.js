@@ -1397,8 +1397,6 @@ app.post('/api/firestore-write/:collection', async (req, res) => {
   }
 });
 
-// Get all users (safe - only returns basic info)
-// ============ FIRESTORE USER MANAGEMENT ============
 
 // Get all users (safe - only returns basic info, limited to 100)
 app.get('/api/firestore-users/all', async (req, res) => {
@@ -1931,6 +1929,171 @@ app.delete('/api/users/:userId/favorites', async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Error removing favorite:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Add multiple verses to favorites at once
+app.post('/api/users/:userId/favorites/bulk', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { verses } = req.body; // Array of verse objects
+
+    if (!verses || !Array.isArray(verses) || verses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Verses array is required'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    const userData = doc.exists ? doc.data() : { favorites: [] };
+    const existingFavorites = userData.favorites || [];
+
+    const newFavorites = [];
+    const alreadyExist = [];
+
+    for (const verse of verses) {
+      const { book, bookId, chapter, verse: verseNum, text, translation, notes } = verse;
+
+      if (!book || !chapter || !verseNum || !text) {
+        console.warn('Skipping invalid verse:', verse);
+        continue;
+      }
+
+      // Check if already favorited
+      const exists = existingFavorites.some(function(f) {
+        return f.book === book && 
+               f.chapter === parseInt(chapter) && 
+               f.verse === parseInt(verseNum) &&
+               f.translation === (translation || 'KJV');
+      });
+
+      if (exists) {
+        alreadyExist.push(`${book} ${chapter}:${verseNum}`);
+        continue;
+      }
+
+      const favorite = {
+        id: book + '-' + chapter + '-' + verseNum + '-' + Date.now() + '-' + Math.random().toString(36).substr(2, 4),
+        book: book,
+        bookId: bookId || 0,
+        chapter: parseInt(chapter),
+        verse: parseInt(verseNum),
+        text: text,
+        translation: translation || 'KJV',
+        notes: notes || '',
+        dateAdded: new Date().toISOString(),
+        dateModified: new Date().toISOString()
+      };
+
+      newFavorites.push(favorite);
+    }
+
+    if (newFavorites.length === 0) {
+      return res.status(409).json({
+        success: false,
+        error: 'All verses are already in favorites',
+        alreadyExist: alreadyExist,
+        addedCount: 0
+      });
+    }
+
+    // Update user document
+    const allFavorites = [...existingFavorites, ...newFavorites];
+    await db.collection('users').doc(userId).set({
+      favorites: allFavorites,
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+
+    res.json({
+      success: true,
+      message: `${newFavorites.length} verse(s) added to favorites`,
+      data: newFavorites,
+      addedCount: newFavorites.length,
+      alreadyExist: alreadyExist,
+      totalFavorites: allFavorites.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error adding bulk favorites:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Remove multiple verses from favorites at once
+app.delete('/api/users/:userId/favorites/bulk', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { verses } = req.body; // Array of { book, chapter, verse, translation }
+
+    if (!verses || !Array.isArray(verses) || verses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Verses array is required'
+      });
+    }
+
+    if (!isFirebaseAvailable || !db) {
+      return res.status(503).json({
+        success: false,
+        message: 'Firebase/Firestore not available'
+      });
+    }
+
+    const doc = await db.collection('users').doc(userId).get();
+    
+    if (!doc.exists) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
+
+    const userData = doc.data();
+    const favorites = userData.favorites || [];
+
+    // Create a set of verses to remove
+    const toRemove = new Set();
+    verses.forEach(v => {
+      const key = `${v.book}|${v.chapter}|${v.verse}|${v.translation || 'KJV'}`;
+      toRemove.add(key);
+    });
+
+    const updatedFavorites = favorites.filter(function(f) {
+      const key = `${f.book}|${f.chapter}|${f.verse}|${f.translation || 'KJV'}`;
+      return !toRemove.has(key);
+    });
+
+    const removedCount = favorites.length - updatedFavorites.length;
+
+    await db.collection('users').doc(userId).update({
+      favorites: updatedFavorites,
+      updatedAt: new Date().toISOString()
+    });
+
+    res.json({
+      success: true,
+      message: `${removedCount} verse(s) removed from favorites`,
+      removedCount: removedCount,
+      totalFavorites: updatedFavorites.length
+    });
+
+  } catch (error) {
+    console.error('❌ Error removing bulk favorites:', error);
     res.status(500).json({
       success: false,
       error: error.message

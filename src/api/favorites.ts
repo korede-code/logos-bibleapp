@@ -144,3 +144,64 @@ export async function updateFavoriteNotes(
     throw error;
   }
 }
+
+export interface BulkFavoriteResult {
+  success: boolean;
+  message: string;
+  data: FavoriteVerse[];
+  addedCount: number;
+  alreadyExist: string[];
+  totalFavorites: number;
+}
+
+// Add multiple verses at once
+export async function addBulkFavorites(
+  userId: string, 
+  verses: Array<Omit<FavoriteVerse, 'id' | 'dateAdded' | 'dateModified'>>
+): Promise<BulkFavoriteResult> {
+  try {
+    const url = `${API_BASE_URL}/users/${userId}/favorites/bulk`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+      },
+      body: JSON.stringify({ verses })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to add favorites');
+    }
+    return data;
+  } catch (error) {
+    console.error('Error adding bulk favorites:', error);
+    throw error;
+  }
+}
+
+// Remove multiple verses at once
+export async function removeBulkFavorites(
+  userId: string, 
+  verses: Array<{ book: string; chapter: number; verse: number; translation?: string }>
+): Promise<BulkFavoriteResult> {
+  try {
+    const url = `${API_BASE_URL}/users/${userId}/favorites/bulk`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: { 
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+      },
+      body: JSON.stringify({ verses })
+    });
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to remove favorites');
+    }
+    return data;
+  } catch (error) {
+    console.error('Error removing bulk favorites:', error);
+    throw error;
+  }
+}

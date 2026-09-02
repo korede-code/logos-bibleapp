@@ -6,7 +6,10 @@ import {
   removeFavorite,
   checkFavorite,
   updateFavoriteNotes,
-  FavoriteVerse
+  addBulkFavorites,
+  removeBulkFavorites,
+  FavoriteVerse,
+  BulkFavoriteResult
 } from '../api/favorites';
 
 export function useFavorites(userId: string | null) {
@@ -16,6 +19,7 @@ export function useFavorites(userId: string | null) {
   const [isAdding, setIsAdding] = useState(false);
   const [isRemoving, setIsRemoving] = useState(false);
 
+  // Load favorites from API
   const loadFavorites = useCallback(async () => {
     if (!userId) {
       setFavorites([]);
@@ -35,6 +39,7 @@ export function useFavorites(userId: string | null) {
     }
   }, [userId]);
 
+  // Add single favorite
   const addFavoriteVerse = useCallback(async (
     verse: Omit<FavoriteVerse, 'id' | 'dateAdded' | 'dateModified'>
   ) => {
@@ -61,6 +66,7 @@ export function useFavorites(userId: string | null) {
     }
   }, [userId]);
 
+  // Remove single favorite
   const removeFavoriteVerse = useCallback(async (
     book: string,
     chapter: number,
@@ -89,6 +95,53 @@ export function useFavorites(userId: string | null) {
     }
   }, [userId]);
 
+  // ✅ Add bulk favorites (NEW)
+  const addBulkFavoritesVerse = useCallback(async (
+    verses: Array<Omit<FavoriteVerse, 'id' | 'dateAdded' | 'dateModified'>>
+  ): Promise<BulkFavoriteResult> => {
+    if (!userId) {
+      throw new Error('User not logged in');
+    }
+    
+    setIsAdding(true);
+    setError(null);
+    try {
+      const result = await addBulkFavorites(userId, verses);
+      // Refresh favorites list
+      await loadFavorites();
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to add favorites');
+      throw err;
+    } finally {
+      setIsAdding(false);
+    }
+  }, [userId, loadFavorites]);
+
+  // ✅ Remove bulk favorites (NEW)
+  const removeBulkFavoritesVerse = useCallback(async (
+    verses: Array<{ book: string; chapter: number; verse: number; translation?: string }>
+  ): Promise<{ success: boolean; message: string; removedCount: number; totalFavorites: number }> => {
+    if (!userId) {
+      throw new Error('User not logged in');
+    }
+    
+    setIsRemoving(true);
+    setError(null);
+    try {
+      const result = await removeBulkFavorites(userId, verses);
+      // Refresh favorites list
+      await loadFavorites();
+      return result;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove favorites');
+      throw err;
+    } finally {
+      setIsRemoving(false);
+    }
+  }, [userId, loadFavorites]);
+
+  // Check if a verse is favorited
   const isFavorited = useCallback(async (
     book: string,
     chapter: number,
@@ -106,6 +159,7 @@ export function useFavorites(userId: string | null) {
     }
   }, [userId]);
 
+  // Update notes for a favorite
   const updateNotes = useCallback(async (favoriteId: string, notes: string) => {
     if (!userId) {
       throw new Error('User not logged in');
@@ -123,6 +177,7 @@ export function useFavorites(userId: string | null) {
     }
   }, [userId]);
 
+  // Load favorites on mount
   useEffect(() => {
     loadFavorites();
   }, [loadFavorites]);
@@ -134,8 +189,13 @@ export function useFavorites(userId: string | null) {
     isAdding,
     isRemoving,
     loadFavorites,
+    // Single verse methods
     addFavorite: addFavoriteVerse,
     removeFavorite: removeFavoriteVerse,
+    // Bulk methods (NEW)
+    addBulkFavorites: addBulkFavoritesVerse,
+    removeBulkFavorites: removeBulkFavoritesVerse,
+    // Utility methods
     isFavorited,
     updateNotes,
     count: favorites.length

@@ -141,44 +141,64 @@ const AnnotationToolbar: React.FC = () => {
     }
 
     try {
-      const isFavorited = await areSelectedVersesFavorited();
+      // Prepare verses data
+      const versesToProcess: any[] = [];
       const translation = readerSettings.translation || 'KJV';
 
-      if (isFavorited) {
-        // Remove all selected verses from favorites
-        for (const verse of verseData.verses) {
-          await removeFavorite(
-            verseData.bookName,
-            verse.chapter,
-            verse.verse,
-            translation
-          );
+      // Get verse texts from DOM
+      for (const verse of verseData.verses) {
+        const verseElement = document.getElementById(`verse-${verse.verse}`);
+        let text = '';
+        if (verseElement) {
+          const textSpan = verseElement.querySelector('span[role="button"]');
+          if (textSpan) {
+            text = textSpan.textContent?.trim() || '';
+          }
         }
-        toast(`❤️ Removed ${verseData.verses.length} verse(s) from favorites`);
+        
+        versesToProcess.push({
+          book: verseData.bookName,
+          bookId: verse.bookId,
+          chapter: verse.chapter,
+          verse: verse.verse,
+          text: text || `${verseData.bookName} ${verse.chapter}:${verse.verse}`,
+          translation: translation,
+          notes: ''
+        });
+      }
+
+      // Check if all selected verses are already favorited
+      const allFavorited = await Promise.all(
+        versesToProcess.map(async (v) => {
+          return await isFavorited(v.book, v.chapter, v.verse, v.translation);
+        })
+      );
+
+      const areAllFavorited = allFavorited.every(Boolean);
+
+      if (areAllFavorited) {
+        // Remove all selected verses from favorites
+        const versesToRemove = versesToProcess.map(v => ({
+          book: v.book,
+          chapter: v.chapter,
+          verse: v.verse,
+          translation: v.translation
+        }));
+        
+        const result = await removeBulkFavorites(versesToRemove);
+        toast(`❤️ Removed ${result.removedCount} verse(s) from favorites`);
       } else {
         // Add all selected verses to favorites
-        for (const verse of verseData.verses) {
-          // Get verse text
-          const verseElement = document.getElementById(`verse-${verse.verse}`);
-          let text = '';
-          if (verseElement) {
-            const textSpan = verseElement.querySelector('span[role="button"]');
-            if (textSpan) {
-              text = textSpan.textContent?.trim() || '';
-            }
-          }
-
-          await addFavorite({
-            book: verseData.bookName,
-            bookId: verse.bookId,
-            chapter: verse.chapter,
-            verse: verse.verse,
-            text: text || `${verseData.bookName} ${verse.chapter}:${verse.verse}`,
-            translation: translation,
-            notes: ''
-          });
+        const result = await addBulkFavorites(versesToProcess);
+        toast(`❤️ Added ${result.addedCount} verse(s) to favorites`);
+        if (result.alreadyExist && result.alreadyExist.length > 0) {
+          // Show which verses were already favorited
+          console.log('Already favorited:', result.alreadyExist);
+          // Optionally show a second toast
+          setTimeout(() => {
+            toast(`${result.alreadyExist.length} verse(s) were already in favorites`, '#f59e0b');
+          }, 2000);
         }
-        toast(`❤️ Added ${verseData.verses.length} verse(s) to favorites`);
       }
       
       clearSelectedVerses();
