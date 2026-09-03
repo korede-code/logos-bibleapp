@@ -1,8 +1,8 @@
 // config/firestore.js
-const { getFirestore } = require('firebase-admin/firestore');
-const admin = require('firebase-admin');
+const { db, isFirebaseAvailable } = require('./config/firebase-admin');
 
-// Get Firestore from the initialized app
-const db = getFirestore(admin.apps[0]);
-
-module.exports = { db };
+// Use db directly
+if (isFirebaseAvailable && db) {
+  const snapshot = await db.collection('users').get();
+  // ...
+}
